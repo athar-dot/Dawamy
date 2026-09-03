@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Building2,
   CalendarDays,
@@ -18,6 +18,12 @@ import {
   Zap,
   Users,
   Fingerprint,
+  DollarSign,
+  Menu,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import {
   UserProfile,
@@ -30,6 +36,7 @@ import {
   AttendanceRecord,
   BiometricDeviceConfig,
   BiometricVerifyMethod,
+  SalaryDeduction,
 } from './types';
 import {
   INITIAL_USERS,
@@ -38,6 +45,7 @@ import {
   INITIAL_NOTIFICATIONS,
   INITIAL_BIOMETRIC_DEVICES,
   INITIAL_ATTENDANCE_RECORDS,
+  INITIAL_DEDUCTIONS,
 } from './mockData';
 import { Header } from './components/Header';
 import { OverviewCards } from './components/OverviewCards';
@@ -50,6 +58,7 @@ import { AiStandupGenerator } from './components/AiStandupGenerator';
 import { AnalyticsView } from './components/AnalyticsView';
 import { HrEmployeeManagement } from './components/HrEmployeeManagement';
 import { BiometricAttendanceView } from './components/BiometricAttendanceView';
+import { PayrollAndDeductionsView } from './components/PayrollAndDeductionsView';
 import { NewRequestModal } from './components/NewRequestModal';
 import { VirtualCheckinModal } from './components/VirtualCheckinModal';
 import { AuthDomainHelpModal } from './components/AuthDomainHelpModal';
@@ -77,6 +86,12 @@ import {
   subscribeToBiometricDevices,
   saveBiometricDevice,
   batchUpdateUserBalances,
+  subscribeToDeductions,
+  saveSalaryDeduction,
+  waiveSalaryDeduction,
+  restoreSalaryDeduction,
+  waiveAttendanceLateRecord,
+  restoreAttendanceLateRecord,
 } from './services/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
@@ -138,8 +153,17 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_BIOMETRIC_DEVICES;
   });
 
-  // Active Tab
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'approvals' | 'calendar' | 'advisor' | 'analytics' | 'admin_users' | 'biometric'>('dashboard');
+  // Salary Deductions & Penalties State
+  const [deductions, setDeductions] = useState<SalaryDeduction[]>(() => {
+    const saved = localStorage.getItem('dawamy_deductions');
+    return saved ? JSON.parse(saved) : INITIAL_DEDUCTIONS;
+  });
+
+  // Active Tab (Reorganized with Payroll & Analytics prominently placed)
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'approvals' | 'biometric' | 'payroll' | 'analytics' | 'admin_users' | 'calendar' | 'advisor'>('dashboard');
+
+  // Mobile navigation drawer toggle
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Modals
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
@@ -159,6 +183,18 @@ export default function App() {
     port: 3000,
     host: '0.0.0.0',
   });
+
+  // Navigation horizontal scroll ref & helper for laptops/desktops
+  const navScrollRef = useRef<HTMLDivElement>(null);
+  const scrollNav = (direction: 'left' | 'right') => {
+    if (navScrollRef.current) {
+      const scrollAmount = 280;
+      navScrollRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth',
+      });
+    }
+  };
 
   // Save to localStorage
   useEffect(() => {
@@ -188,6 +224,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('dawamy_devices', JSON.stringify(biometricDevices));
   }, [biometricDevices]);
+
+  useEffect(() => {
+    localStorage.setItem('dawamy_deductions', JSON.stringify(deductions));
+  }, [deductions]);
 
   // Firebase Real-Time Firestore Listeners and Auth Hook
   useEffect(() => {
@@ -354,6 +394,13 @@ export default function App() {
       }
     });
 
+    // 8. Real-time subscribe to Salary Deductions & Penalties
+    const unsubscribeDeductions = subscribeToDeductions((remoteDeductions) => {
+      if (remoteDeductions && remoteDeductions.length > 0) {
+        setDeductions(remoteDeductions);
+      }
+    });
+
     return () => {
       unsubscribeAuth();
       unsubscribeReqs();
@@ -361,6 +408,7 @@ export default function App() {
       unsubscribeNotifs();
       unsubscribeAttendance();
       unsubscribeDevices();
+      unsubscribeDeductions();
     };
   }, []);
 
@@ -1042,6 +1090,175 @@ export default function App() {
     }
   };
 
+  // ----------------------------------------------------
+  // SALARY & DEDUCTION HANDLERS
+  // ----------------------------------------------------
+  const handleSaveDeduction = async (deduction: SalaryDeduction): Promise<boolean> => {
+    try {
+      setDeductions((prev) => {
+        const idx = prev.findIndex((d) => d.id === deduction.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = deduction;
+          return next;
+        }
+        return [deduction, ...prev];
+      });
+
+      await saveSalaryDeduction(deduction);
+      showToast(isAr ? 'تم حفظ الخصم المالي بنجاح' : 'Deduction saved successfully', 'success');
+      return true;
+    } catch (err) {
+      console.error('Error saving deduction:', err);
+      showToast(isAr ? 'تعذر حفظ الخصم' : 'Failed to save deduction', 'error');
+      return false;
+    }
+  };
+
+  const handleWaiveDeduction = async (
+    deductionId: string,
+    waivedBy: string,
+    waivedReason: string
+  ): Promise<boolean> => {
+    try {
+      setDeductions((prev) =>
+        prev.map((d) =>
+          d.id === deductionId
+            ? {
+                ...d,
+                status: 'waived',
+                waivedBy,
+                waivedReason,
+                waivedAt: new Date().toISOString(),
+              }
+            : d
+        )
+      );
+
+      await waiveSalaryDeduction(deductionId, waivedBy, waivedReason);
+      showToast(isAr ? 'تم رفع الخصم وإسقاطه بنجاح' : 'Deduction waived successfully', 'success');
+      return true;
+    } catch (err) {
+      console.error('Error waiving deduction:', err);
+      showToast(isAr ? 'تعذر رفع الخصم' : 'Failed to waive deduction', 'error');
+      return false;
+    }
+  };
+
+  const handleRestoreDeduction = async (deductionId: string): Promise<boolean> => {
+    try {
+      setDeductions((prev) =>
+        prev.map((d) =>
+          d.id === deductionId
+            ? {
+                ...d,
+                status: 'applied',
+                waivedBy: undefined,
+                waivedReason: undefined,
+                waivedAt: undefined,
+              }
+            : d
+        )
+      );
+
+      await restoreSalaryDeduction(deductionId);
+      showToast(isAr ? 'تمت إعادة تطبيق الخصم' : 'Deduction restored', 'info');
+      return true;
+    } catch (err) {
+      console.error('Error restoring deduction:', err);
+      showToast(isAr ? 'تعذر إعادة الخصم' : 'Failed to restore deduction', 'error');
+      return false;
+    }
+  };
+
+  const handleWaiveAttendanceLate = async (
+    attendanceId: string,
+    waivedBy: string,
+    waivedReason: string
+  ): Promise<boolean> => {
+    try {
+      setAttendanceRecords((prev) =>
+        prev.map((r) =>
+          r.id === attendanceId
+            ? {
+                ...r,
+                isLateDeductionWaived: true,
+                waivedBy,
+                waivedReason,
+                waivedAt: new Date().toISOString(),
+              }
+            : r
+        )
+      );
+
+      await waiveAttendanceLateRecord(attendanceId, waivedBy, waivedReason);
+      showToast(isAr ? 'تم رفع خصم تأخير البصمة واعتماد العذر' : 'Late punch deduction waived', 'success');
+      return true;
+    } catch (err) {
+      console.error('Error waiving late punch deduction:', err);
+      showToast(isAr ? 'تعذر رفع خصم التأخير' : 'Failed to waive late deduction', 'error');
+      return false;
+    }
+  };
+
+  const handleRestoreAttendanceLate = async (attendanceId: string): Promise<boolean> => {
+    try {
+      setAttendanceRecords((prev) =>
+        prev.map((r) =>
+          r.id === attendanceId
+            ? {
+                ...r,
+                isLateDeductionWaived: false,
+                waivedBy: undefined,
+                waivedReason: undefined,
+                waivedAt: undefined,
+              }
+            : r
+        )
+      );
+
+      await restoreAttendanceLateRecord(attendanceId);
+      showToast(isAr ? 'تمت إعادة احتساب التأخير' : 'Late deduction restored', 'info');
+      return true;
+    } catch (err) {
+      console.error('Error restoring late punch deduction:', err);
+      showToast(isAr ? 'تعذر إعادة الخصم' : 'Failed to restore late deduction', 'error');
+      return false;
+    }
+  };
+
+  const handleUpdateUserSalary = async (
+    userId: string,
+    salary: number,
+    graceHours: number
+  ): Promise<boolean> => {
+    try {
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                salary,
+                graceLateHoursMonthly: graceHours,
+              }
+            : u
+        )
+      );
+
+      await updateUserInFirestore(userId, {
+        salary,
+        graceLateHoursMonthly: graceHours,
+      });
+
+      showToast(isAr ? 'تم تحديث الراتب وساعات السماحية بنجاح' : 'Salary and grace hours updated', 'success');
+      return true;
+    } catch (err) {
+      console.error('Error updating user salary:', err);
+      showToast(isAr ? 'تعذر تحديث الراتب' : 'Failed to update salary', 'error');
+      return false;
+    }
+  };
+
   const pendingCount = requests.filter((r) => r.status.startsWith('pending')).length;
 
   return (
@@ -1082,19 +1299,118 @@ export default function App() {
           firebaseAuthUser={firebaseAuthUser}
         />
 
-        {/* Main Navigation Bar */}
-        <nav className="bg-[#FAF9F6]/95 border-t border-[#E5E2D9]/60 backdrop-blur-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto py-2.5 scrollbar-none text-xs sm:text-sm">
+        {/* Responsive Navigation Bar (Mobile, Tablet & Laptop Optimized) */}
+        <nav className="bg-[#FAF9F6]/95 border-t border-[#E5E2D9]/60 backdrop-blur-sm relative">
+          {/* 1. Mobile Quick Selector Bar (Visible on mobile/small screens) */}
+          <div className="md:hidden flex items-center justify-between px-3.5 py-2 border-b border-[#E5E2D9]/50 bg-[#F5F2EB]">
+            <button
+              type="button"
+              id="btn-mobile-nav-toggle"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-[#D9E0D2] text-[#2D3628] font-bold text-xs shadow-xs"
+            >
+              {(() => {
+                const current = [
+                  { id: 'dashboard', labelAr: 'الرئيسية', labelEn: 'Dashboard', icon: LayoutDashboard },
+                  { id: 'requests', labelAr: 'سجل الطلبات', labelEn: 'Requests', icon: ClipboardList },
+                  { id: 'approvals', labelAr: 'اعتمادات الفريق', labelEn: 'Approvals', icon: ShieldCheck },
+                  { id: 'biometric', labelAr: 'البصمة والحضور', labelEn: 'Attendance', icon: Fingerprint },
+                  { id: 'payroll', labelAr: 'الرواتب والخصومات', labelEn: 'Payroll & Deductions', icon: DollarSign },
+                  { id: 'analytics', labelAr: 'التقارير وسجل الحضور', labelEn: 'Reports & Analytics', icon: BarChart3 },
+                  { id: 'admin_users', labelAr: 'إدارة الموظفين (HR)', labelEn: 'HR Directory', icon: Users },
+                  { id: 'calendar', labelAr: 'تقويم الفريق', labelEn: 'Calendar', icon: Calendar },
+                  { id: 'advisor', labelAr: 'المستشار الذكي', labelEn: 'AI Advisor', icon: Sparkles },
+                ].find((t) => t.id === activeTab);
+                const Icon = current?.icon || LayoutDashboard;
+                return (
+                  <>
+                    <Icon className="w-4 h-4 text-[#5E7153]" />
+                    <span>{isAr ? current?.labelAr : current?.labelEn}</span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-[#65635E] transition-transform ${isMobileMenuOpen ? 'rotate-180' : ''}`} />
+                  </>
+                );
+              })()}
+            </button>
+
+            <span className="text-[11px] text-[#65635E] font-medium">
+              {isAr ? 'اضغط لاختيار القسم أو التقرير' : 'Tap to switch section'}
+            </span>
+          </div>
+
+          {/* Mobile Full Dropdown Menu (Overlay) */}
+          {isMobileMenuOpen && (
+            <div className="md:hidden absolute top-full left-0 right-0 bg-white border-b border-[#E5E2D9] shadow-2xl z-50 p-4 animate-in slide-in-from-top-2 duration-200">
+              <div className="text-xs font-bold text-[#65635E] mb-2 px-1">
+                {isAr ? 'أقسام النظام والتقارير' : 'Platform Sections & Reports'}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'dashboard', labelAr: 'الرئيسية', labelEn: 'Dashboard', icon: LayoutDashboard },
+                  { id: 'requests', labelAr: 'سجل الطلبات', labelEn: 'Requests', icon: ClipboardList, badge: requests.length },
+                  { id: 'approvals', labelAr: 'اعتمادات الفريق', labelEn: 'Approvals', icon: ShieldCheck, badge: pendingCount, highlightBadge: pendingCount > 0 },
+                  { id: 'biometric', labelAr: 'البصمة والحضور', labelEn: 'Attendance', icon: Fingerprint, badge: attendanceRecords.length },
+                  { id: 'payroll', labelAr: 'الرواتب والخصومات', labelEn: 'Payroll & Deductions', icon: DollarSign, badge: deductions.filter((d) => d.status === 'applied').length },
+                  { id: 'analytics', labelAr: 'التقارير وسجل الحضور', labelEn: 'Reports & Analytics', icon: BarChart3 },
+                  { id: 'admin_users', labelAr: 'إدارة الموظفين (HR)', labelEn: 'HR Directory', icon: Users, badge: users.length },
+                  { id: 'calendar', labelAr: 'تقويم الفريق', labelEn: 'Calendar', icon: Calendar },
+                  { id: 'advisor', labelAr: 'المستشار الذكي', labelEn: 'AI Advisor', icon: Sparkles },
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => {
+                        setActiveTab(tab.id as any);
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-right text-xs font-semibold transition ${
+                        isActive
+                          ? 'bg-[#5E7153] text-white border-[#5E7153] shadow-xs'
+                          : 'bg-[#FAF9F6] text-[#2D3628] border-[#E5E2D9] hover:bg-[#EFECE4]'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span className="truncate flex-1">{isAr ? tab.labelAr : tab.labelEn}</span>
+                      {tab.badge !== undefined && tab.badge > 0 && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isActive ? 'bg-[#45553C] text-white' : 'bg-[#E5E2D9] text-[#2D3628]'}`}>
+                          {tab.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 2. Desktop & Laptop Horizontal Tab Bar with Left/Right Scroll Controls */}
+          <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 relative flex items-center">
+            {/* Left Scroll Arrow (Desktop/Laptop) */}
+            <button
+              type="button"
+              aria-label="Scroll left"
+              onClick={() => scrollNav(isAr ? 'right' : 'left')}
+              className="hidden lg:flex items-center justify-center w-7 h-7 rounded-full bg-white border border-[#E5E2D9] text-[#65635E] hover:text-[#2D3628] hover:bg-[#EFECE4] shadow-xs shrink-0 mx-1 z-10 transition"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            {/* Scrollable Tabs Row */}
+            <div
+              ref={navScrollRef}
+              className="flex-1 flex items-center gap-1 sm:gap-2 overflow-x-auto py-2.5 scroll-smooth text-xs sm:text-sm scrollbar-thin scrollbar-thumb-[#D9E0D2] scrollbar-track-transparent"
+            >
               {[
-                { id: 'dashboard', labelAr: 'الرئيسية (لوحة التحكم)', labelEn: 'Dashboard', icon: LayoutDashboard },
-                { id: 'requests', labelAr: 'سجل الطلبات', labelEn: 'Requests Log', icon: ClipboardList, badge: requests.length },
+                { id: 'dashboard', labelAr: 'الرئيسية', labelEn: 'Dashboard', icon: LayoutDashboard },
+                { id: 'requests', labelAr: 'سجل الطلبات', labelEn: 'Requests', icon: ClipboardList, badge: requests.length },
                 { id: 'approvals', labelAr: 'اعتمادات الفريق', labelEn: 'Team Approvals', icon: ShieldCheck, badge: pendingCount, highlightBadge: pendingCount > 0 },
-                { id: 'admin_users', labelAr: 'إدارة الموظفين (HR)', labelEn: 'HR & Directory', icon: Users, hrTag: true, badge: users.length },
-                { id: 'biometric', labelAr: 'البصمة والحضور', labelEn: 'Biometric Attendance', icon: Fingerprint, badge: attendanceRecords.length },
-                { id: 'calendar', labelAr: 'تقويم الفريق والتغطية', labelEn: 'Team Calendar', icon: Calendar },
-                { id: 'advisor', labelAr: 'المستشار الذكي للوائح', labelEn: 'AI Policy Advisor', icon: Sparkles, aiTag: true },
-                { id: 'analytics', labelAr: 'التقارير وسجل الحضور', labelEn: 'Analytics & Reports', icon: BarChart3 },
+                { id: 'biometric', labelAr: 'البصمة والحضور', labelEn: 'Attendance', icon: Fingerprint, badge: attendanceRecords.length },
+                { id: 'payroll', labelAr: 'الرواتب والخصومات', labelEn: 'Payroll & Deductions', icon: DollarSign, badge: deductions.filter((d) => d.status === 'applied').length, payrollTag: true },
+                { id: 'analytics', labelAr: 'التقارير وسجل الحضور', labelEn: 'Reports & Analytics', icon: BarChart3 },
+                { id: 'admin_users', labelAr: 'إدارة الموظفين (HR)', labelEn: 'HR Directory', icon: Users, hrTag: true, badge: users.length },
+                { id: 'calendar', labelAr: 'تقويم الفريق', labelEn: 'Team Calendar', icon: Calendar },
+                { id: 'advisor', labelAr: 'المستشار الذكي', labelEn: 'AI Advisor', icon: Sparkles, aiTag: true },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -1104,7 +1420,7 @@ export default function App() {
                     key={tab.id}
                     id={`tab-nav-${tab.id}`}
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-semibold whitespace-nowrap transition-all ${
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-semibold whitespace-nowrap transition-all shrink-0 ${
                       isActive
                         ? 'bg-[#5E7153] text-white shadow-md shadow-[#5E7153]/20 font-bold'
                         : 'text-[#65635E] hover:text-[#2D3628] hover:bg-[#EFECE4]'
@@ -1112,6 +1428,12 @@ export default function App() {
                   >
                     <Icon className="w-4 h-4 shrink-0" />
                     <span>{isAr ? tab.labelAr : tab.labelEn}</span>
+
+                    {tab.payrollTag && !isActive && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] font-bold">
+                        {isAr ? 'رواتب' : 'Payroll'}
+                      </span>
+                    )}
 
                     {tab.aiTag && !isActive && (
                       <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#E9EDD9] text-[#384532] border border-[#D9E0D2]">
@@ -1125,7 +1447,7 @@ export default function App() {
                       </span>
                     )}
 
-                    {tab.badge !== undefined && (
+                    {tab.badge !== undefined && tab.badge > 0 && (
                       <span
                         className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
                           isActive
@@ -1142,12 +1464,22 @@ export default function App() {
                 );
               })}
             </div>
+
+            {/* Right Scroll Arrow (Desktop/Laptop) */}
+            <button
+              type="button"
+              aria-label="Scroll right"
+              onClick={() => scrollNav(isAr ? 'left' : 'right')}
+              className="hidden lg:flex items-center justify-center w-7 h-7 rounded-full bg-white border border-[#E5E2D9] text-[#65635E] hover:text-[#2D3628] hover:bg-[#EFECE4] shadow-xs shrink-0 mx-1 z-10 transition"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
         </nav>
       </div>
 
       {/* Main Body Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-24 md:pb-8">
         {activeTab === 'dashboard' && (
           <div className="space-y-8 animate-in fade-in duration-150">
             {/* 1. Balances, Quick Actions, Status */}
@@ -1238,6 +1570,24 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'payroll' && (
+          <div className="animate-in fade-in duration-150">
+            <PayrollAndDeductionsView
+              currentUser={currentUser}
+              allUsers={users}
+              attendanceRecords={attendanceRecords}
+              deductions={deductions}
+              onSaveDeduction={handleSaveDeduction}
+              onWaiveDeduction={handleWaiveDeduction}
+              onRestoreDeduction={handleRestoreDeduction}
+              onWaiveAttendanceLate={handleWaiveAttendanceLate}
+              onRestoreAttendanceLate={handleRestoreAttendanceLate}
+              onUpdateUserSalary={handleUpdateUserSalary}
+              lang={lang}
+            />
+          </div>
+        )}
+
         {activeTab === 'calendar' && (
           <div className="animate-in fade-in duration-150">
             <TeamCalendarView
@@ -1270,7 +1620,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-[#EFECE4] border-t border-[#E5E2D9] py-6 text-xs text-[#65635E]">
+      <footer className="bg-[#EFECE4] border-t border-[#E5E2D9] py-6 text-xs text-[#65635E] pb-20 md:pb-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-[#D9E0D2] text-[#2D3628] flex items-center justify-center font-bold text-xs">
@@ -1295,6 +1645,53 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* 3. Mobile Bottom Quick Floating Navigation Dock (App-Like 1-Touch Access) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-lg border-t border-[#E5E2D9] px-2 py-1 shadow-2xl flex items-center justify-around">
+        {[
+          { id: 'dashboard', labelAr: 'الرئيسية', labelEn: 'Home', icon: LayoutDashboard },
+          { id: 'requests', labelAr: 'الطلبات', labelEn: 'Requests', icon: ClipboardList, badge: requests.length },
+          { id: 'biometric', labelAr: 'البصمة', labelEn: 'Punch', icon: Fingerprint },
+          { id: 'payroll', labelAr: 'الرواتب', labelEn: 'Payroll', icon: DollarSign },
+          { id: 'analytics', labelAr: 'التقارير', labelEn: 'Reports', icon: BarChart3 },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id as any);
+                setIsMobileMenuOpen(false);
+              }}
+              className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-xl text-[10px] font-bold transition relative ${
+                isActive ? 'text-[#5E7153]' : 'text-[#65635E] hover:text-[#2D3628]'
+              }`}
+            >
+              <div className={`p-1 rounded-lg ${isActive ? 'bg-[#E9EDD9] text-[#2D3628]' : ''}`}>
+                <Icon className="w-5 h-5" />
+              </div>
+              <span className="mt-0.5 whitespace-nowrap">{isAr ? tab.labelAr : tab.labelEn}</span>
+              {tab.badge !== undefined && tab.badge > 0 && (
+                <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-[#E5AA70]" />
+              )}
+            </button>
+          );
+        })}
+
+        {/* More Menu Toggle Button on Mobile Dock */}
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-xl text-[10px] font-bold transition ${
+            isMobileMenuOpen ? 'text-[#5E7153]' : 'text-[#65635E] hover:text-[#2D3628]'
+          }`}
+        >
+          <div className={`p-1 rounded-lg ${isMobileMenuOpen ? 'bg-[#E9EDD9] text-[#2D3628]' : ''}`}>
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </div>
+          <span className="mt-0.5 whitespace-nowrap">{isAr ? 'المزيد' : 'More'}</span>
+        </button>
+      </div>
 
       {/* Modals */}
       <NewRequestModal

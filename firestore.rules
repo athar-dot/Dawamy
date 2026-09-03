@@ -62,5 +62,12 @@ service cloud.firestore {
       allow create, update: if true;
       allow delete: if true;
     }
+
+    // Salary deductions, penalties and waivers
+    match /deductions/{deductionId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
   }
 }

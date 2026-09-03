@@ -24,8 +24,8 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { LeaveOrWfhRequest, UserProfile, NotificationItem, AttendanceRecord, BiometricDeviceConfig } from '../types';
-import { INITIAL_REQUESTS, INITIAL_USERS, INITIAL_NOTIFICATIONS } from '../mockData';
+import { LeaveOrWfhRequest, UserProfile, NotificationItem, AttendanceRecord, BiometricDeviceConfig, SalaryDeduction } from '../types';
+import { INITIAL_REQUESTS, INITIAL_USERS, INITIAL_NOTIFICATIONS, INITIAL_DEDUCTIONS } from '../mockData';
 
 // Initialize Firebase App
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -476,4 +476,138 @@ export async function saveBiometricDevice(device: BiometricDeviceConfig): Promis
     throw error;
   }
 }
+
+// ----------------------------------------------------
+// SALARY DEDUCTIONS & PENALTIES (FIRESTORE SYNC & WAIVER)
+// ----------------------------------------------------
+export function subscribeToDeductions(callback: (deductions: SalaryDeduction[]) => void) {
+  const q = collection(db, 'deductions');
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      if (!snapshot.empty) {
+        const deductions: SalaryDeduction[] = [];
+        snapshot.forEach((docSnap) => {
+          deductions.push({ id: docSnap.id, ...(docSnap.data() as Omit<SalaryDeduction, 'id'>) });
+        });
+        setTimeout(() => callback(deductions), 0);
+      } else {
+        setTimeout(() => callback(INITIAL_DEDUCTIONS), 0);
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'deductions');
+      // Fallback to initial deductions
+      callback(INITIAL_DEDUCTIONS);
+    }
+  );
+}
+
+export async function saveSalaryDeduction(deduction: SalaryDeduction): Promise<boolean> {
+  try {
+    const ref = doc(db, 'deductions', deduction.id);
+    await setDoc(ref, {
+      ...deduction,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `deductions/${deduction.id}`);
+    throw error;
+  }
+}
+
+export async function waiveSalaryDeduction(
+  deductionId: string,
+  waivedBy: string,
+  waivedReason: string
+): Promise<boolean> {
+  try {
+    const ref = doc(db, 'deductions', deductionId);
+    await updateDoc(ref, {
+      status: 'waived',
+      waivedBy,
+      waivedReason,
+      waivedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `deductions/${deductionId}`);
+    throw error;
+  }
+}
+
+export async function restoreSalaryDeduction(deductionId: string): Promise<boolean> {
+  try {
+    const ref = doc(db, 'deductions', deductionId);
+    await updateDoc(ref, {
+      status: 'applied',
+      waivedBy: null,
+      waivedReason: null,
+      waivedAt: null,
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `deductions/${deductionId}`);
+    throw error;
+  }
+}
+
+export async function deleteSalaryDeduction(deductionId: string): Promise<boolean> {
+  try {
+    const ref = doc(db, 'deductions', deductionId);
+    await deleteDoc(ref);
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `deductions/${deductionId}`);
+    throw error;
+  }
+}
+
+/**
+ * Waives a late punch deduction for a specific attendance record
+ */
+export async function waiveAttendanceLateRecord(
+  attendanceId: string,
+  waivedBy: string,
+  waivedReason: string
+): Promise<boolean> {
+  try {
+    const ref = doc(db, 'attendance', attendanceId);
+    await updateDoc(ref, {
+      isLateDeductionWaived: true,
+      waivedBy,
+      waivedReason,
+      waivedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `attendance/${attendanceId}`);
+    throw error;
+  }
+}
+
+/**
+ * Restores a late punch deduction for a specific attendance record
+ */
+export async function restoreAttendanceLateRecord(attendanceId: string): Promise<boolean> {
+  try {
+    const ref = doc(db, 'attendance', attendanceId);
+    await updateDoc(ref, {
+      isLateDeductionWaived: false,
+      waivedBy: null,
+      waivedReason: null,
+      waivedAt: null,
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `attendance/${attendanceId}`);
+    throw error;
+  }
+}
+
 

@@ -34,6 +34,9 @@ export interface UserProfile {
   joinDate?: string;
   phone?: string;
   biometricEnrollId?: string; // Machine fingerprint/face ID (e.g. "101", "102")
+  salary?: number; // Base monthly salary (e.g. 15000)
+  salaryCurrency?: string; // e.g. "SAR" or "ر.س"
+  graceLateHoursMonthly?: number; // Monthly allowed late hours (default 4.0)
   balances: {
     wfhMonthlyTotal: number;
     wfhMonthlyUsed: number;
@@ -139,9 +142,75 @@ export interface AttendanceRecord {
   deviceName?: string;
   deviceLocation?: string;
   rawPunchLog?: string;
+  isLateDeductionWaived?: boolean; // Whether the late deduction was officially waived by HR/Manager
+  waivedReason?: string; // Justification for waiving the late deduction
+  waivedBy?: string; // Name of HR/Manager who waived it
+  waivedAt?: string; // ISO timestamp
   createdAt?: string;
   updatedAt?: string;
   notes?: string;
+}
+
+// ----------------------------------------------------
+// SALARY & DEDUCTION TYPES (LATE, PENALTY, WAIVER)
+// ----------------------------------------------------
+export type DeductionType = 'late_arrival' | 'penalty_disciplinary' | 'unexcused_absence' | 'other';
+export type DeductionStatus = 'applied' | 'waived';
+
+export interface SalaryDeduction {
+  id: string;
+  userId: string;
+  userName: string;
+  userNameEn?: string;
+  userEmail: string;
+  department: string;
+  month: string; // "YYYY-MM" e.g. "2026-09"
+  type: DeductionType;
+  title: string;
+  titleEn?: string;
+  amount: number; // Currency amount deducted
+  hoursDeducted?: number; // In case of late hours
+  daysDeducted?: number; // In case of days penalty
+  date: string; // YYYY-MM-DD
+  status: DeductionStatus;
+  reason: string;
+  issuedBy: string; // e.g. "إدارة الموارد البشرية (HR)"
+  issuedAt: string;
+  waivedAt?: string;
+  waivedBy?: string;
+  waivedReason?: string; // Reason for lifting/waiving the deduction
+  attendanceRecordId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MonthlyEmployeeLateSummary {
+  userId: string;
+  userName: string;
+  userNameEn?: string;
+  userEmail: string;
+  department: string;
+  avatar: string;
+  month: string; // "YYYY-MM"
+  baseSalary: number;
+  salaryCurrency: string;
+  hourlyRate: number; // baseSalary / 30 / 8
+  totalLateOccurrences: number; // count of late punches
+  totalLateMinutes: number; // sum of un-waived late minutes
+  totalLateHours: number; // totalLateMinutes / 60
+  allowedGraceHours: number; // e.g. 4.0
+  allowedGraceMinutes: number; // 240
+  usedGraceMinutes: number;
+  remainingGraceMinutes: number;
+  remainingGraceHours: number;
+  excessLateMinutes: number;
+  excessLateHours: number;
+  lateDeductionAmount: number; // excessLateHours * hourlyRate
+  penaltyDeductionsAmount: number; // sum of applied disciplinary deductions
+  waivedDeductionsAmount: number; // total value of waived deductions
+  totalNetDeductions: number; // lateDeductionAmount + penaltyDeductionsAmount
+  netSalary: number; // baseSalary - totalNetDeductions
+  lateRecords: AttendanceRecord[];
 }
 
 export interface BiometricDeviceConfig {
