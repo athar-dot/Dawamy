@@ -48,5 +48,19 @@ service cloud.firestore {
       allow create, update: if true;
       allow delete: if true;
     }
+
+    // Attendance records (Biometric punch logs)
+    match /attendance/{attendanceId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
+    // Biometric device configurations & sync status
+    match /biometric_devices/{deviceId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
   }
 }

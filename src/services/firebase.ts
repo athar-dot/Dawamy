@@ -21,9 +21,10 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { LeaveOrWfhRequest, UserProfile, NotificationItem } from '../types';
+import { LeaveOrWfhRequest, UserProfile, NotificationItem, AttendanceRecord, BiometricDeviceConfig } from '../types';
 import { INITIAL_REQUESTS, INITIAL_USERS, INITIAL_NOTIFICATIONS } from '../mockData';
 
 // Initialize Firebase App
@@ -364,3 +365,115 @@ export async function saveVirtualCheckIn(checkin: {
     handleFirestoreError(error, OperationType.CREATE, `checkins/${checkin.id}`);
   }
 }
+
+// ----------------------------------------------------
+// BATCH UPDATE EMPLOYEE BALANCES (EXCEL IMPORT)
+// ----------------------------------------------------
+export async function batchUpdateUserBalances(
+  updates: { userId: string; balances: UserProfile['balances'] }[]
+): Promise<boolean> {
+  try {
+    const batch = writeBatch(db);
+    const nowIso = new Date().toISOString();
+
+    for (const item of updates) {
+      const userRef = doc(db, 'users', item.userId);
+      batch.update(userRef, {
+        balances: item.balances,
+        updatedAt: nowIso,
+      });
+    }
+
+    await batch.commit();
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'users/batch_balance_update');
+    // Fallback: update documents individually if batch rejected
+    try {
+      for (const item of updates) {
+        await updateUserInFirestore(item.userId, { balances: item.balances });
+      }
+      return true;
+    } catch (fallbackErr) {
+      handleFirestoreError(fallbackErr, OperationType.UPDATE, 'users');
+      throw fallbackErr;
+    }
+  }
+}
+
+// ----------------------------------------------------
+// BIOMETRIC ATTENDANCE RECORDS (FIRESTORE REAL-TIME SYNC)
+// ----------------------------------------------------
+export function subscribeToAttendance(callback: (records: AttendanceRecord[]) => void) {
+  const q = collection(db, 'attendance');
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      if (!snapshot.empty) {
+        const records: AttendanceRecord[] = [];
+        snapshot.forEach((docSnap) => {
+          records.push({ id: docSnap.id, ...(docSnap.data() as Omit<AttendanceRecord, 'id'>) });
+        });
+        setTimeout(() => callback(records), 0);
+      } else {
+        setTimeout(() => callback([]), 0);
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'attendance');
+    }
+  );
+}
+
+export async function saveAttendanceRecord(record: AttendanceRecord): Promise<boolean> {
+  try {
+    const ref = doc(db, 'attendance', record.id);
+    await setDoc(ref, {
+      ...record,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `attendance/${record.id}`);
+    throw error;
+  }
+}
+
+// ----------------------------------------------------
+// BIOMETRIC DEVICES CONFIGURATION (FIRESTORE SYNC)
+// ----------------------------------------------------
+export function subscribeToBiometricDevices(callback: (devices: BiometricDeviceConfig[]) => void) {
+  const q = collection(db, 'biometric_devices');
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      if (!snapshot.empty) {
+        const devices: BiometricDeviceConfig[] = [];
+        snapshot.forEach((docSnap) => {
+          devices.push({ id: docSnap.id, ...(docSnap.data() as Omit<BiometricDeviceConfig, 'id'>) });
+        });
+        setTimeout(() => callback(devices), 0);
+      } else {
+        setTimeout(() => callback([]), 0);
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'biometric_devices');
+    }
+  );
+}
+
+export async function saveBiometricDevice(device: BiometricDeviceConfig): Promise<boolean> {
+  try {
+    const ref = doc(db, 'biometric_devices', device.id);
+    await setDoc(ref, {
+      ...device,
+      lastSyncTime: new Date().toISOString(),
+    }, { merge: true });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `biometric_devices/${device.id}`);
+    throw error;
+  }
+}
+

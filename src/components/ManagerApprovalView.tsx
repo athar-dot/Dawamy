@@ -205,13 +205,15 @@ export const ManagerApprovalView: React.FC<ManagerApprovalViewProps> = ({
                   <p className="text-[#43423E] leading-relaxed">{req.reason}</p>
                 </div>
 
-                {/* Handover information */}
-                {(req.handoverColleague || req.handoverPlan) && (
+                {/* Handover information (Plan only shown for remote work) */}
+                {(req.handoverColleague || (req.type === 'remote' && req.handoverPlan)) && (
                   <div className="p-3 rounded-xl bg-white border border-[#E5E2D9] text-xs flex items-center gap-2 flex-wrap">
                     <UserCheck className="w-4 h-4 text-[#5E7153]" />
                     <span className="text-[#65635E]">{isAr ? 'تغطية المهام والتسليم:' : 'Handover & Coverage:'}</span>
                     <strong className="text-[#2D3628]">{req.handoverColleague || 'غير محدد'}</strong>
-                    {req.handoverPlan && <span className="text-[#65635E] italic">({req.handoverPlan})</span>}
+                    {req.type === 'remote' && req.handoverPlan && (
+                      <span className="text-[#65635E] italic">({req.handoverPlan})</span>
+                    )}
                   </div>
                 )}
 

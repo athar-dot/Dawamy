@@ -26,8 +26,11 @@ import {
   Network,
   Check,
   Award,
+  FileSpreadsheet,
+  Fingerprint,
 } from 'lucide-react';
 import { UserProfile, UserRole, WorkStatus } from '../types';
+import { BulkBalanceImportModal } from './BulkBalanceImportModal';
 
 interface HrEmployeeManagementProps {
   users: UserProfile[];
@@ -35,6 +38,7 @@ interface HrEmployeeManagementProps {
   onAddEmployee: (employee: UserProfile) => Promise<boolean | void>;
   onUpdateEmployee: (userId: string, data: Partial<UserProfile>) => Promise<boolean | void>;
   onDeleteEmployee: (userId: string) => Promise<boolean | void>;
+  onBatchUpdateBalances?: (updates: { userId: string; balances: UserProfile['balances'] }[]) => Promise<void>;
   onSelectUser: (user: UserProfile) => void;
   lang: 'ar' | 'en';
 }
@@ -66,6 +70,7 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
   onAddEmployee,
   onUpdateEmployee,
   onDeleteEmployee,
+  onBatchUpdateBalances,
   onSelectUser,
   lang,
 }) => {
@@ -79,6 +84,7 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -89,6 +95,7 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
     nameEn: string;
     email: string;
     phone: string;
+    biometricEnrollId: string;
     role: UserRole;
     title: string;
     titleEn: string;
@@ -104,6 +111,7 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
     nameEn: '',
     email: '',
     phone: '',
+    biometricEnrollId: '',
     role: 'employee',
     title: '',
     titleEn: '',
@@ -188,6 +196,7 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
       nameEn: '',
       email: '',
       phone: '',
+      biometricEnrollId: '',
       role: 'employee',
       title: isAr ? 'مهندس برمجيات' : 'Software Engineer',
       titleEn: 'Software Engineer',
@@ -210,6 +219,7 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
       nameEn: user.nameEn || user.name,
       email: user.email || '',
       phone: user.phone || '',
+      biometricEnrollId: user.biometricEnrollId || '',
       role: user.role,
       title: user.title,
       titleEn: user.titleEn || user.title,
@@ -235,11 +245,13 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
     try {
       if (editingUserId) {
         // Update existing user
+        const existingUser = users.find((u) => u.id === editingUserId);
         await onUpdateEmployee(editingUserId, {
           name: formData.name.trim(),
           nameEn: formData.nameEn.trim() || formData.name.trim(),
           email: formData.email.trim(),
           phone: formData.phone.trim(),
+          biometricEnrollId: formData.biometricEnrollId.trim() || undefined,
           role: formData.role,
           title: formData.title.trim(),
           titleEn: formData.titleEn.trim() || formData.title.trim(),
@@ -250,11 +262,11 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
           avatar: formData.avatar,
           balances: {
             wfhMonthlyTotal: Number(formData.wfhMonthlyTotal) || 8,
-            wfhMonthlyUsed: 0,
+            wfhMonthlyUsed: existingUser?.balances?.wfhMonthlyUsed || 0,
             annualLeaveTotal: Number(formData.annualLeaveTotal) || 25,
-            annualLeaveUsed: 0,
-            sickLeaveUsed: 0,
-            emergencyLeaveUsed: 0,
+            annualLeaveUsed: existingUser?.balances?.annualLeaveUsed || 0,
+            sickLeaveUsed: existingUser?.balances?.sickLeaveUsed || 0,
+            emergencyLeaveUsed: existingUser?.balances?.emergencyLeaveUsed || 0,
           },
         });
       } else {
@@ -266,6 +278,7 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
           nameEn: formData.nameEn.trim() || formData.name.trim(),
           email: formData.email.trim(),
           phone: formData.phone.trim(),
+          biometricEnrollId: formData.biometricEnrollId.trim() || undefined,
           role: formData.role,
           title: formData.title.trim() || (isAr ? 'موظف' : 'Employee'),
           titleEn: formData.titleEn.trim() || 'Employee',
@@ -352,6 +365,15 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              id="btn-bulk-import-excel"
+              onClick={() => setIsBulkImportOpen(true)}
+              className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-white hover:bg-[#FAF9F6] border border-[#D9E0D2] text-[#2D3628] font-bold text-sm shadow-xs transition-all transform active:scale-95"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-[#5E7153]" />
+              <span>{isAr ? 'استيراد رصيد الإجازات من إكسيل' : 'Bulk Leave Import (Excel)'}</span>
+            </button>
+
             <button
               id="btn-add-new-employee"
               onClick={handleOpenNewModal}
@@ -909,7 +931,7 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-[#2D3628] mb-1">
                       {isAr ? 'البريد الإلكتروني المهني *' : 'Work Email *'}
@@ -936,6 +958,21 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="+966 50 123 4567"
                       className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-[#E5E2D9] rounded-xl focus:ring-2 focus:ring-[#5E7153] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#2D3628] mb-1 flex items-center gap-1">
+                      <Fingerprint className="w-3.5 h-3.5 text-[#5E7153]" />
+                      <span>{isAr ? 'رقم البصمة بالجهاز' : 'Biometric Enroll ID'}</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="input-emp-biometric-id"
+                      value={formData.biometricEnrollId}
+                      onChange={(e) => setFormData({ ...formData, biometricEnrollId: e.target.value })}
+                      placeholder={isAr ? 'مثال: 105' : 'e.g. 105'}
+                      className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-[#E5E2D9] rounded-xl focus:ring-2 focus:ring-[#5E7153] focus:outline-none font-mono"
                     />
                   </div>
                 </div>
@@ -1224,6 +1261,19 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
           </div>
         </div>
       )}
+
+      {/* 7. Bulk Leave Balances Excel Import Modal */}
+      <BulkBalanceImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        allUsers={users}
+        onApplyBatch={async (updates) => {
+          if (onBatchUpdateBalances) {
+            await onBatchUpdateBalances(updates);
+          }
+        }}
+        lang={lang}
+      />
 
     </div>
   );

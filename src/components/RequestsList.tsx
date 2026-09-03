@@ -269,8 +269,8 @@ export const RequestsList: React.FC<RequestsListProps> = ({
                       </p>
                     </div>
 
-                    {/* Handover & Plan */}
-                    {(req.handoverColleague || req.handoverPlan) && (
+                    {/* Handover & Plan (Handover plan only for remote work) */}
+                    {(req.handoverColleague || (req.type === 'remote' && req.handoverPlan)) && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {req.handoverColleague && (
                           <div className="p-3 rounded-xl bg-white border border-[#E5E2D9]">
@@ -278,7 +278,7 @@ export const RequestsList: React.FC<RequestsListProps> = ({
                             <span className="font-bold text-[#2D3628]">{req.handoverColleague}</span>
                           </div>
                         )}
-                        {req.handoverPlan && (
+                        {req.type === 'remote' && req.handoverPlan && (
                           <div className="p-3 rounded-xl bg-white border border-[#E5E2D9]">
                             <span className="text-[#65635E] block mb-0.5">{isAr ? 'خطة التسليم والمتابعة:' : 'Handover Plan:'}</span>
                             <span className="text-[#43423E]">{req.handoverPlan}</span>

@@ -17,6 +17,7 @@ import {
   Server,
   Zap,
   Users,
+  Fingerprint,
 } from 'lucide-react';
 import {
   UserProfile,
@@ -26,12 +27,17 @@ import {
   NotificationItem,
   WorkStatus,
   DailyTaskItem,
+  AttendanceRecord,
+  BiometricDeviceConfig,
+  BiometricVerifyMethod,
 } from './types';
 import {
   INITIAL_USERS,
   INITIAL_REQUESTS,
   INITIAL_TEAM_MEMBERS,
   INITIAL_NOTIFICATIONS,
+  INITIAL_BIOMETRIC_DEVICES,
+  INITIAL_ATTENDANCE_RECORDS,
 } from './mockData';
 import { Header } from './components/Header';
 import { OverviewCards } from './components/OverviewCards';
@@ -43,6 +49,7 @@ import { AiPolicyAdvisor } from './components/AiPolicyAdvisor';
 import { AiStandupGenerator } from './components/AiStandupGenerator';
 import { AnalyticsView } from './components/AnalyticsView';
 import { HrEmployeeManagement } from './components/HrEmployeeManagement';
+import { BiometricAttendanceView } from './components/BiometricAttendanceView';
 import { NewRequestModal } from './components/NewRequestModal';
 import { VirtualCheckinModal } from './components/VirtualCheckinModal';
 import { AuthDomainHelpModal } from './components/AuthDomainHelpModal';
@@ -65,6 +72,11 @@ import {
   loginWithGoogle,
   logoutUser,
   auth as firebaseAuth,
+  subscribeToAttendance,
+  saveAttendanceRecord,
+  subscribeToBiometricDevices,
+  saveBiometricDevice,
+  batchUpdateUserBalances,
 } from './services/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
@@ -115,8 +127,19 @@ export default function App() {
     uid?: string;
   } | null>(null);
 
+  // Biometric & Attendance State
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
+    const saved = localStorage.getItem('dawamy_attendance');
+    return saved ? JSON.parse(saved) : INITIAL_ATTENDANCE_RECORDS;
+  });
+
+  const [biometricDevices, setBiometricDevices] = useState<BiometricDeviceConfig[]>(() => {
+    const saved = localStorage.getItem('dawamy_devices');
+    return saved ? JSON.parse(saved) : INITIAL_BIOMETRIC_DEVICES;
+  });
+
   // Active Tab
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'approvals' | 'calendar' | 'advisor' | 'analytics' | 'admin_users'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'approvals' | 'calendar' | 'advisor' | 'analytics' | 'admin_users' | 'biometric'>('dashboard');
 
   // Modals
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
@@ -157,6 +180,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('dawamy_notifs', JSON.stringify(notifications));
   }, [notifications]);
+
+  useEffect(() => {
+    localStorage.setItem('dawamy_attendance', JSON.stringify(attendanceRecords));
+  }, [attendanceRecords]);
+
+  useEffect(() => {
+    localStorage.setItem('dawamy_devices', JSON.stringify(biometricDevices));
+  }, [biometricDevices]);
 
   // Firebase Real-Time Firestore Listeners and Auth Hook
   useEffect(() => {
@@ -309,11 +340,27 @@ export default function App() {
       }
     });
 
+    // 6. Real-time subscribe to Biometric Attendance
+    const unsubscribeAttendance = subscribeToAttendance((records) => {
+      if (records && records.length > 0) {
+        setAttendanceRecords(records);
+      }
+    });
+
+    // 7. Real-time subscribe to Biometric Devices
+    const unsubscribeDevices = subscribeToBiometricDevices((devs) => {
+      if (devs && devs.length > 0) {
+        setBiometricDevices(devs);
+      }
+    });
+
     return () => {
       unsubscribeAuth();
       unsubscribeReqs();
       unsubscribeUsers();
       unsubscribeNotifs();
+      unsubscribeAttendance();
+      unsubscribeDevices();
     };
   }, []);
 
@@ -838,6 +885,163 @@ export default function App() {
     }
   };
 
+  // HR / Admin: Bulk Update Leave Balances via Excel
+  const handleBatchUpdateBalances = async (updates: { userId: string; balances: UserProfile['balances'] }[]) => {
+    try {
+      setUsers((prevUsers) =>
+        prevUsers.map((u) => {
+          const update = updates.find((up) => up.userId === u.id);
+          if (update) {
+            return {
+              ...u,
+              balances: {
+                ...u.balances,
+                ...update.balances,
+              },
+            };
+          }
+          return u;
+        })
+      );
+
+      await batchUpdateUserBalances(updates);
+
+      showToast(
+        isAr
+          ? `تم تحديث أرصدة (${updates.length}) موظف بنجاح في Firestore`
+          : `Updated leave balances for (${updates.length}) employees in Firestore`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Failed to batch update leave balances:', error);
+      showToast(
+        isAr ? 'حدث خطأ أثناء تحديث الأرصدة دفعة واحدة' : 'Failed to update leave balances in bulk',
+        'error'
+      );
+    }
+  };
+
+  // Biometric Attendance Punch Event (From Simulator or Biometric Terminal)
+  const handleRecordPunch = async ({
+    userId,
+    type,
+    deviceId,
+    verifyMethod = 'fingerprint',
+  }: {
+    userId: string;
+    type: 'check_in' | 'check_out';
+    deviceId?: string;
+    verifyMethod?: BiometricVerifyMethod;
+  }) => {
+    try {
+      const targetUser = users.find((u) => u.id === userId) || currentUser;
+      const todayDate = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const timeNowStr = now.toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const existingRec = attendanceRecords.find((r) => r.userId === targetUser.id && r.date === todayDate);
+      const chosenDevice = biometricDevices.find((d) => d.id === deviceId) || biometricDevices[0];
+
+      let status: AttendanceRecord['status'] = 'present';
+      let lateMinutes = 0;
+
+      if (type === 'check_in') {
+        const workStart = new Date();
+        workStart.setHours(9, 0, 0, 0);
+        if (now.getTime() > workStart.getTime()) {
+          lateMinutes = Math.floor((now.getTime() - workStart.getTime()) / (1000 * 60));
+          if (lateMinutes > 15) {
+            status = 'late';
+          }
+        }
+      }
+
+      const newRecord: AttendanceRecord = {
+        id: existingRec ? existingRec.id : `att-${targetUser.id}-${todayDate}`,
+        userId: targetUser.id,
+        userName: targetUser.name,
+        userEmail: targetUser.email,
+        department: targetUser.department,
+        date: todayDate,
+        checkInTime: type === 'check_in' ? timeNowStr : (existingRec?.checkInTime || timeNowStr),
+        checkOutTime: type === 'check_out' ? timeNowStr : existingRec?.checkOutTime,
+        status: existingRec?.status || status,
+        lateMinutes: existingRec?.lateMinutes !== undefined ? existingRec.lateMinutes : lateMinutes,
+        verifyMethod,
+        deviceId: chosenDevice?.id,
+        deviceName: chosenDevice?.name || (isAr ? 'جهاز المقر الرئيسي' : 'HQ Terminal'),
+        deviceLocation: chosenDevice?.location || (isAr ? 'المدخل الرئيسي' : 'Main Gate'),
+        createdAt: existingRec?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (newRecord.checkInTime && newRecord.checkOutTime) {
+        newRecord.totalWorkingHours = 8.0;
+      }
+
+      setAttendanceRecords((prev) => {
+        const idx = prev.findIndex((r) => r.id === newRecord.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = newRecord;
+          return next;
+        }
+        return [newRecord, ...prev];
+      });
+
+      if (type === 'check_in') {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === targetUser.id ? { ...u, todayStatus: 'in_office' } : u))
+        );
+      }
+
+      await saveAttendanceRecord(newRecord);
+
+      showToast(
+        isAr
+          ? `تم رصد بصمة ${type === 'check_in' ? 'دخول' : 'خروج'} الموظف (${targetUser.name}) بنجاح`
+          : `Biometric ${type === 'check_in' ? 'check-in' : 'check-out'} logged for (${targetUser.name})`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Failed to log biometric attendance:', error);
+      showToast(
+        isAr ? 'حدث خطأ أثناء تسجيل البصمة' : 'Failed to log biometric attendance',
+        'error'
+      );
+    }
+  };
+
+  const handleSaveBiometricDevice = async (device: BiometricDeviceConfig) => {
+    try {
+      setBiometricDevices((prev) => {
+        const idx = prev.findIndex((d) => d.id === device.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = device;
+          return next;
+        }
+        return [...prev, device];
+      });
+
+      await saveBiometricDevice(device);
+
+      showToast(
+        isAr ? `تم حفظ إعدادات جهاز البصمة (${device.name}) بنجاح` : `Biometric device saved`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Failed to save biometric device:', error);
+      showToast(
+        isAr ? 'حدث خطأ أثناء حفظ الجهاز' : 'Failed to save biometric device',
+        'error'
+      );
+    }
+  };
+
   const pendingCount = requests.filter((r) => r.status.startsWith('pending')).length;
 
   return (
@@ -887,6 +1091,7 @@ export default function App() {
                 { id: 'requests', labelAr: 'سجل الطلبات', labelEn: 'Requests Log', icon: ClipboardList, badge: requests.length },
                 { id: 'approvals', labelAr: 'اعتمادات الفريق', labelEn: 'Team Approvals', icon: ShieldCheck, badge: pendingCount, highlightBadge: pendingCount > 0 },
                 { id: 'admin_users', labelAr: 'إدارة الموظفين (HR)', labelEn: 'HR & Directory', icon: Users, hrTag: true, badge: users.length },
+                { id: 'biometric', labelAr: 'البصمة والحضور', labelEn: 'Biometric Attendance', icon: Fingerprint, badge: attendanceRecords.length },
                 { id: 'calendar', labelAr: 'تقويم الفريق والتغطية', labelEn: 'Team Calendar', icon: Calendar },
                 { id: 'advisor', labelAr: 'المستشار الذكي للوائح', labelEn: 'AI Policy Advisor', icon: Sparkles, aiTag: true },
                 { id: 'analytics', labelAr: 'التقارير وسجل الحضور', labelEn: 'Analytics & Reports', icon: BarChart3 },
@@ -1013,6 +1218,21 @@ export default function App() {
               onUpdateEmployee={handleUpdateEmployee}
               onDeleteEmployee={handleDeleteEmployee}
               onSelectUser={handleSelectUser}
+              onBatchUpdateBalances={handleBatchUpdateBalances}
+              lang={lang}
+            />
+          </div>
+        )}
+
+        {activeTab === 'biometric' && (
+          <div className="animate-in fade-in duration-150">
+            <BiometricAttendanceView
+              currentUser={currentUser}
+              allUsers={users}
+              attendanceRecords={attendanceRecords}
+              biometricDevices={biometricDevices}
+              onRecordPunch={handleRecordPunch}
+              onAddDevice={handleSaveBiometricDevice}
               lang={lang}
             />
           </div>

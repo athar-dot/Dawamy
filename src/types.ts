@@ -33,6 +33,7 @@ export interface UserProfile {
   managerId?: string;
   joinDate?: string;
   phone?: string;
+  biometricEnrollId?: string; // Machine fingerprint/face ID (e.g. "101", "102")
   balances: {
     wfhMonthlyTotal: number;
     wfhMonthlyUsed: number;
@@ -110,3 +111,84 @@ export interface PolicyFaqItem {
   summaryEn: string;
   tag: string;
 }
+
+// ----------------------------------------------------
+// BIOMETRIC ATTENDANCE & PUNCH DEVICE INTEGRATION TYPES
+// ----------------------------------------------------
+export type AttendanceStatus = 'present' | 'late' | 'early_leave' | 'absent' | 'on_leave' | 'wfh';
+
+export type BiometricVerifyMethod = 'fingerprint' | 'face' | 'card' | 'manual';
+
+export interface AttendanceRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  userNameEn?: string;
+  userEmail: string;
+  department: string;
+  departmentEn?: string;
+  biometricEnrollId?: string;
+  date: string; // YYYY-MM-DD
+  checkInTime?: string; // HH:mm:ss
+  checkOutTime?: string; // HH:mm:ss
+  status: AttendanceStatus;
+  totalWorkingHours?: number; // Calculated hours worked
+  lateMinutes?: number; // Delay past expected start time (e.g. 09:00 AM)
+  verifyMethod?: BiometricVerifyMethod;
+  deviceId?: string;
+  deviceName?: string;
+  deviceLocation?: string;
+  rawPunchLog?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  notes?: string;
+}
+
+export interface BiometricDeviceConfig {
+  id: string;
+  name: string;
+  ipAddress: string;
+  port: number;
+  serialNumber: string;
+  protocol: 'adms' | 'rest_webhook' | 'tcp_ip' | 'cloud';
+  location: string;
+  status: 'online' | 'offline' | 'syncing';
+  lastSyncTime?: string;
+  totalRegisteredUsers?: number;
+  apiKey?: string;
+  firmwareVersion?: string;
+}
+
+export interface BiometricPunchPayload {
+  deviceId: string;
+  enrollId: string; // e.g. "101"
+  timestamp: string; // ISO or YYYY-MM-DD HH:mm:ss
+  punchType: 'check_in' | 'check_out' | 'auto';
+  verifyMethod: BiometricVerifyMethod;
+}
+
+// ----------------------------------------------------
+// BULK LEAVE BALANCES IMPORT TYPES (EXCEL / CSV)
+// ----------------------------------------------------
+export interface BulkBalanceImportRow {
+  rowNumber: number;
+  identifier: string; // email or user id
+  employeeName?: string;
+  annualLeaveTotal?: number;
+  annualLeaveUsed?: number;
+  sickLeaveUsed?: number;
+  emergencyLeaveUsed?: number;
+  wfhMonthlyTotal?: number;
+  wfhMonthlyUsed?: number;
+  matchedUser?: UserProfile;
+  status: 'valid' | 'invalid' | 'warning';
+  validationMessage?: string;
+}
+
+export interface BulkImportSummary {
+  totalRows: number;
+  validCount: number;
+  invalidCount: number;
+  updatedCount: number;
+}
+

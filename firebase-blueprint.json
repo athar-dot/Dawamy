@@ -81,6 +81,49 @@
         "timestamp": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "title", "message", "type", "read"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Biometric punch clock-in/out attendance logs and status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 128 },
+        "biometricEnrollId": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string", "maxLength": 32 },
+        "checkInTime": { "type": "string", "maxLength": 32 },
+        "checkOutTime": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["present", "late", "early_leave", "absent", "on_leave", "wfh"] },
+        "totalWorkingHours": { "type": "number" },
+        "lateMinutes": { "type": "number" },
+        "verifyMethod": { "type": "string", "enum": ["fingerprint", "face", "card", "manual"] },
+        "deviceId": { "type": "string", "maxLength": 64 },
+        "deviceName": { "type": "string", "maxLength": 128 },
+        "deviceLocation": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "date", "status"]
+    },
+    "BiometricDevice": {
+      "title": "BiometricDevice",
+      "description": "Biometric device configuration and synchronization status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "ipAddress": { "type": "string", "maxLength": 64 },
+        "port": { "type": "number" },
+        "serialNumber": { "type": "string", "maxLength": 128 },
+        "protocol": { "type": "string", "enum": ["adms", "rest_webhook", "tcp_ip", "cloud"] },
+        "location": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["online", "offline", "syncing"] },
+        "lastSyncTime": { "type": "string", "maxLength": 64 },
+        "totalRegisteredUsers": { "type": "number" },
+        "apiKey": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["id", "name", "ipAddress", "port", "protocol"]
     }
   },
   "firestore": {
@@ -99,6 +142,14 @@
     "/notifications/{notificationId}": {
       "schema": "Notification",
       "description": "Notifications collection"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "AttendanceRecord",
+      "description": "Biometric attendance logs and records"
+    },
+    "/biometric_devices/{deviceId}": {
+      "schema": "BiometricDevice",
+      "description": "Biometric devices configuration and status"
     }
   }
 }
