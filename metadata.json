@@ -1,0 +1,8 @@
+{
+  "name": "دوامي - Dawamy",
+  "description": "منصة دوامي الذكية للعمل عن بعد وإدارة الإجازات - واجهة مخصصة لكل موظف لإدارة طلبات الدوام المرن والإجازات ومتابعة الاعتمادات بين الموظف والمدير والموارد البشرية",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

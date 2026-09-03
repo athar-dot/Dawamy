@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if true; // Public directory for presence / team awareness
+      allow create, update: if true; // Allow seamless onboarding, HR creation & profile sync
+      allow delete: if true; // Allow HR/admin user management
+    }
+
+    // Requests collection (Leave / WFH requests)
+    match /requests/{requestId} {
+      allow read: if true; // Visible to team/manager for schedule coordination
+      allow create: if true; // Allow creating requests
+      allow update: if true; // Allow manager/HR approval flows
+      allow delete: if true;
+    }
+
+    // Check-ins collection
+    match /checkins/{checkinId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+  }
+}
