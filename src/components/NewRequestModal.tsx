@@ -117,7 +117,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       reason,
       isAiGeneratedReason: isAiReason,
       handoverColleague,
-      handoverPlan,
+      handoverPlan: type === 'remote' ? handoverPlan.trim() : '',
     });
 
     onClose();
@@ -335,8 +335,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             />
           </div>
 
-          {/* 5. Handover Colleague & Handover Plan */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#E5E2D9]">
+          {/* 5. Handover Colleague & Handover Plan (Only for Remote Work) */}
+          <div className={`grid grid-cols-1 ${type === 'remote' ? 'sm:grid-cols-2' : ''} gap-4 pt-2 border-t border-[#E5E2D9]`}>
             <div>
               <label className="block text-xs font-semibold text-[#2D3628] mb-1.5 flex items-center gap-1.5">
                 <UserCheck className="w-3.5 h-3.5 text-[#5E7153]" />
@@ -355,18 +355,20 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#2D3628] mb-1.5">
-                {isAr ? 'خطة تسليم المهام أثناء الغياب/الدوام:' : 'Handover & Availability Plan:'}
-              </label>
-              <input
-                type="text"
-                value={handoverPlan}
-                onChange={(e) => setHandoverPlan(e.target.value)}
-                placeholder={isAr ? 'مثال: تم إيداع الكود ومتاح على الهاتف للطوارئ' : 'e.g. Code merged, available via phone'}
-                className="w-full px-3.5 py-2.5 bg-[#FAF9F6] border border-[#E5E2D9] rounded-xl text-xs sm:text-sm text-[#43423E] placeholder-[#9A9890] focus:outline-none focus:border-[#5E7153]"
-              />
-            </div>
+            {type === 'remote' && (
+              <div>
+                <label className="block text-xs font-semibold text-[#2D3628] mb-1.5">
+                  {isAr ? 'خطة تسليم المهام أثناء الغياب/الدوام:' : 'Handover & Availability Plan:'}
+                </label>
+                <input
+                  type="text"
+                  value={handoverPlan}
+                  onChange={(e) => setHandoverPlan(e.target.value)}
+                  placeholder={isAr ? 'مثال: تم إيداع الكود ومتاح على الهاتف للطوارئ' : 'e.g. Code merged, available via phone'}
+                  className="w-full px-3.5 py-2.5 bg-[#FAF9F6] border border-[#E5E2D9] rounded-xl text-xs sm:text-sm text-[#43423E] placeholder-[#9A9890] focus:outline-none focus:border-[#5E7153]"
+                />
+              </div>
+            )}
           </div>
 
           {/* Submit and Cancel Buttons */}

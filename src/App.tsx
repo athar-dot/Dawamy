@@ -861,88 +861,85 @@ export default function App() {
         </div>
       )}
 
-      {/* Main App Header */}
-      <Header
-        currentUser={currentUser}
-        allUsers={users}
-        onSelectUser={handleSelectUser}
-        onToggleCurrentUserRole={handleToggleCurrentUserRole}
-        notifications={notifications}
-        onMarkNotificationAsRead={(id) => {
-          setNotifications(notifications.map((n) => (n.id === id ? { ...n, read: true } : n)));
-          markNotificationAsReadInFirestore(id).catch((e) => console.warn(e));
-        }}
-        onClearNotifications={() => setNotifications([])}
-        lang={lang}
-        onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
-        serverStatus={serverStatus}
-        isFirebaseConnected={isFirebaseConnected}
-        onGoogleSignIn={handleGoogleLogin}
-        onGoogleSignOut={handleGoogleLogout}
-        firebaseAuthUser={firebaseAuthUser}
-      />
+      {/* Sticky Top Header & Navigation Container */}
+      <div className="sticky top-0 z-40 bg-[#FAF9F6] border-b border-[#E5E2D9] shadow-xs">
+        <Header
+          currentUser={currentUser}
+          allUsers={users}
+          onSelectUser={handleSelectUser}
+          notifications={notifications}
+          onMarkNotificationAsRead={(id) => {
+            setNotifications(notifications.map((n) => (n.id === id ? { ...n, read: true } : n)));
+            markNotificationAsReadInFirestore(id).catch((e) => console.warn(e));
+          }}
+          onClearNotifications={() => setNotifications([])}
+          lang={lang}
+          onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+          firebaseAuthUser={firebaseAuthUser}
+        />
 
-      {/* Main Navigation Bar */}
-      <nav className="bg-[#FAF9F6]/90 border-b border-[#E5E2D9] sticky top-16 sm:top-20 z-30 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto py-2.5 scrollbar-none text-xs sm:text-sm">
-            {[
-              { id: 'dashboard', labelAr: 'الرئيسية (لوحة التحكم)', labelEn: 'Dashboard', icon: LayoutDashboard },
-              { id: 'requests', labelAr: 'سجل الطلبات', labelEn: 'Requests Log', icon: ClipboardList, badge: requests.length },
-              { id: 'approvals', labelAr: 'اعتمادات الفريق', labelEn: 'Team Approvals', icon: ShieldCheck, badge: pendingCount, highlightBadge: pendingCount > 0 },
-              { id: 'admin_users', labelAr: 'إدارة الموظفين (HR)', labelEn: 'HR & Directory', icon: Users, hrTag: true, badge: users.length },
-              { id: 'calendar', labelAr: 'تقويم الفريق والتغطية', labelEn: 'Team Calendar', icon: Calendar },
-              { id: 'advisor', labelAr: 'المستشار الذكي للوائح', labelEn: 'AI Policy Advisor', icon: Sparkles, aiTag: true },
-              { id: 'analytics', labelAr: 'التقارير وسجل الحضور', labelEn: 'Analytics & Reports', icon: BarChart3 },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
+        {/* Main Navigation Bar */}
+        <nav className="bg-[#FAF9F6]/95 border-t border-[#E5E2D9]/60 backdrop-blur-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto py-2.5 scrollbar-none text-xs sm:text-sm">
+              {[
+                { id: 'dashboard', labelAr: 'الرئيسية (لوحة التحكم)', labelEn: 'Dashboard', icon: LayoutDashboard },
+                { id: 'requests', labelAr: 'سجل الطلبات', labelEn: 'Requests Log', icon: ClipboardList, badge: requests.length },
+                { id: 'approvals', labelAr: 'اعتمادات الفريق', labelEn: 'Team Approvals', icon: ShieldCheck, badge: pendingCount, highlightBadge: pendingCount > 0 },
+                { id: 'admin_users', labelAr: 'إدارة الموظفين (HR)', labelEn: 'HR & Directory', icon: Users, hrTag: true, badge: users.length },
+                { id: 'calendar', labelAr: 'تقويم الفريق والتغطية', labelEn: 'Team Calendar', icon: Calendar },
+                { id: 'advisor', labelAr: 'المستشار الذكي للوائح', labelEn: 'AI Policy Advisor', icon: Sparkles, aiTag: true },
+                { id: 'analytics', labelAr: 'التقارير وسجل الحضور', labelEn: 'Analytics & Reports', icon: BarChart3 },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
 
-              return (
-                <button
-                  key={tab.id}
-                  id={`tab-nav-${tab.id}`}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-semibold whitespace-nowrap transition-all ${
-                    isActive
-                      ? 'bg-[#5E7153] text-white shadow-md shadow-[#5E7153]/20 font-bold'
-                      : 'text-[#65635E] hover:text-[#2D3628] hover:bg-[#EFECE4]'
-                  }`}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span>{isAr ? tab.labelAr : tab.labelEn}</span>
+                return (
+                  <button
+                    key={tab.id}
+                    id={`tab-nav-${tab.id}`}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-semibold whitespace-nowrap transition-all ${
+                      isActive
+                        ? 'bg-[#5E7153] text-white shadow-md shadow-[#5E7153]/20 font-bold'
+                        : 'text-[#65635E] hover:text-[#2D3628] hover:bg-[#EFECE4]'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span>{isAr ? tab.labelAr : tab.labelEn}</span>
 
-                  {tab.aiTag && !isActive && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#E9EDD9] text-[#384532] border border-[#D9E0D2]">
-                      Gemini
-                    </span>
-                  )}
+                    {tab.aiTag && !isActive && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#E9EDD9] text-[#384532] border border-[#D9E0D2]">
+                        Gemini
+                      </span>
+                    )}
 
-                  {tab.hrTag && !isActive && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#DBEAFE] text-[#1E40AF] border border-[#BFDBFE] font-bold">
-                      HR
-                    </span>
-                  )}
+                    {tab.hrTag && !isActive && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#DBEAFE] text-[#1E40AF] border border-[#BFDBFE] font-bold">
+                        HR
+                      </span>
+                    )}
 
-                  {tab.badge !== undefined && (
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                        isActive
-                          ? 'bg-[#4B5B42] text-[#E9EDD9]'
-                          : tab.highlightBadge
-                          ? 'bg-[#E5AA70] text-[#2D3628] animate-pulse'
-                          : 'bg-[#EFECE4] text-[#65635E]'
-                      }`}
-                    >
-                      {tab.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                    {tab.badge !== undefined && (
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                          isActive
+                            ? 'bg-[#4B5B42] text-[#E9EDD9]'
+                            : tab.highlightBadge
+                            ? 'bg-[#E5AA70] text-[#2D3628] animate-pulse'
+                            : 'bg-[#EFECE4] text-[#65635E]'
+                        }`}
+                      >
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </nav>
+        </nav>
+      </div>
 
       {/* Main Body Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
@@ -1068,10 +1065,10 @@ export default function App() {
             </span>
           </div>
 
-          <div className="flex items-center gap-3 font-mono text-[11px] text-[#65635E]">
+          <div className="flex items-center gap-3 text-xs text-[#65635E]">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#5E7153]" />
-              <span>Cloud Run Container: PORT 3000 • 0.0.0.0</span>
+              <span>{isAr ? 'نظام معتمد لإدارة الموارد البشرية' : 'Enterprise HR Management System'}</span>
             </span>
             <span>•</span>
             <span className="text-[#5E7153] font-semibold">Powered by Gemini 3.7 Flash</span>

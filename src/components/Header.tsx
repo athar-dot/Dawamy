@@ -5,14 +5,10 @@ import {
   Bell,
   CheckCircle2,
   Sparkles,
-  Server,
   UserCheck,
   ShieldCheck,
   Languages,
   X,
-  Database,
-  LogIn,
-  LogOut,
 } from 'lucide-react';
 import { UserProfile, UserRole, NotificationItem } from '../types';
 
@@ -26,7 +22,7 @@ interface HeaderProps {
   onClearNotifications: () => void;
   lang: 'ar' | 'en';
   onToggleLang: () => void;
-  serverStatus: { status: string; port?: number; host?: string };
+  serverStatus?: { status: string; port?: number; host?: string };
   isFirebaseConnected?: boolean;
   onGoogleSignIn?: () => void;
   onGoogleSignOut?: () => void;
@@ -103,104 +99,16 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Center Info: Live Server, Firebase & Time */}
-          <div className="hidden lg:flex items-center gap-2.5">
-            {/* Firebase Project status pill */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#E9EDD9] border border-[#D9E0D2] text-[11px] text-[#2D3628]" title="Firebase Firestore: leave-management-app-17e2d">
-              <Database className="w-3.5 h-3.5 text-[#5E7153]" />
-              <span className="font-semibold">Firebase</span>
-              <span className="w-2 h-2 rounded-full bg-[#5E7153] animate-pulse" />
-            </div>
-
-            {/* Cloud Run / Server status pill */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#EFECE4] border border-[#E5E2D9] text-[11px] text-[#43423E] font-mono">
-              <Server className="w-3.5 h-3.5 text-[#5E7153]" />
-              <span>:3000</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-[#5E7153]" />
-            </div>
-
-            {/* Current clock */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#EFECE4] border border-[#E5E2D9] text-[11px] text-[#43423E]">
-              <CalendarDays className="w-3.5 h-3.5 text-[#65635E]" />
+          {/* Center Info: Subtle live date & time */}
+          <div className="hidden lg:flex items-center">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EFECE4] border border-[#E5E2D9] text-xs text-[#43423E]">
+              <CalendarDays className="w-3.5 h-3.5 text-[#5E7153]" />
               <span>{currentTime}</span>
             </div>
           </div>
 
-          {/* Right Controls: Role Switcher, Language, Notifications, Profile */}
+          {/* Right Controls: Language, Notifications, Profile */}
           <div className="flex items-center gap-2 sm:gap-3">
-            
-            {/* Quick Admin / Employee Role Toggle Switch for Current User */}
-            {onToggleCurrentUserRole && (
-              <button
-                id="btn-toggle-admin-role"
-                onClick={onToggleCurrentUserRole}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-sm ${
-                  currentUser.role === 'manager'
-                    ? 'bg-gradient-to-r from-[#5E7153] to-[#45553C] text-white border-[#384532] hover:brightness-110'
-                    : currentUser.role === 'hr'
-                    ? 'bg-[#E2EDF8] text-[#1E40AF] border-[#BFDBFE] hover:bg-[#DBEAFE]'
-                    : 'bg-[#FAF9F6] text-[#43423E] border-[#E5E2D9] hover:bg-[#EFECE4] hover:border-[#D5D0C5]'
-                }`}
-                title={
-                  isAr
-                    ? `الصلاحية الحالية: ${currentUser.role === 'manager' ? 'مدير / Admin' : 'موظف'}. اضغط للتبديل السريع.`
-                    : `Current: ${currentUser.role}. Click to toggle Admin/Employee role.`
-                }
-              >
-                {currentUser.role === 'manager' ? (
-                  <>
-                    <ShieldCheck className="w-4 h-4 text-[#A8D5BA]" />
-                    <span className="hidden sm:inline">{isAr ? 'صلاحية المدير' : 'Manager'}</span>
-                    <span className="text-[10px] bg-[#E9EDD9] text-[#2D3628] px-1.5 py-0.5 rounded-md font-extrabold uppercase">
-                      Admin
-                    </span>
-                  </>
-                ) : currentUser.role === 'hr' ? (
-                  <>
-                    <Building2 className="w-4 h-4 text-[#1E40AF]" />
-                    <span className="hidden sm:inline">{isAr ? 'الموارد البشرية' : 'HR Admin'}</span>
-                    <span className="text-[10px] bg-[#DBEAFE] text-[#1E40AF] px-1.5 py-0.5 rounded-md font-extrabold">
-                      HR
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <UserCheck className="w-4 h-4 text-[#5E7153]" />
-                    <span className="hidden sm:inline">{isAr ? 'موظف' : 'Employee'}</span>
-                    <span className="text-[10px] text-[#2D3628] bg-[#E9EDD9] px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
-                      <span>{isAr ? 'ترقية لـ Admin' : 'Make Admin'}</span>
-                      <span>⚡</span>
-                    </span>
-                  </>
-                )}
-              </button>
-            )}
-
-            {/* Quick Demo User Switcher */}
-            <div className="hidden xl:flex items-center bg-[#EFECE4] p-1 rounded-xl border border-[#E5E2D9]">
-              {allUsers.map((user) => {
-                const isActive = currentUser.id === user.id;
-                let roleLabel = user.role === 'employee' ? (isAr ? 'موظف' : 'Employee') : user.role === 'manager' ? (isAr ? 'مدير' : 'Manager') : (isAr ? 'HR' : 'HR');
-                let RoleIcon = user.role === 'employee' ? UserCheck : user.role === 'manager' ? ShieldCheck : Building2;
-
-                return (
-                  <button
-                    key={user.id}
-                    id={`btn-switch-role-${user.id}`}
-                    onClick={() => onSelectUser(user)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      isActive
-                        ? 'bg-[#5E7153] text-white shadow-sm font-semibold'
-                        : 'text-[#65635E] hover:text-[#2D3628] hover:bg-[#E5E2D9]'
-                    }`}
-                    title={`${user.name} (${user.title})`}
-                  >
-                    <RoleIcon className="w-3.5 h-3.5" />
-                    <span>{roleLabel}</span>
-                  </button>
-                );
-              })}
-            </div>
 
             {/* Language toggle (Bilingual Segmented Switcher) */}
             <div className="flex items-center bg-[#EFECE4] p-1 rounded-xl border border-[#E5E2D9]">
@@ -311,32 +219,6 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
             </div>
-
-            {/* Google Auth / Firebase Profile Option */}
-            {onGoogleSignIn && (
-              <button
-                id="btn-google-auth"
-                onClick={firebaseAuthUser ? onGoogleSignOut : onGoogleSignIn}
-                className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition ${
-                  firebaseAuthUser
-                    ? 'bg-[#E9EDD9] text-[#2D3628] border-[#D9E0D2] hover:bg-[#FDF0EE] hover:text-[#9E3B30] hover:border-[#F5C4BE]'
-                    : 'bg-[#FAF9F6] text-[#2D3628] border-[#E5E2D9] hover:bg-[#EFECE4]'
-                }`}
-                title={firebaseAuthUser ? `${firebaseAuthUser.email} (Click to Sign Out)` : 'Sign in with Google Firebase'}
-              >
-                {firebaseAuthUser ? (
-                  <>
-                    <LogOut className="w-3.5 h-3.5 text-[#5E7153]" />
-                    <span className="truncate max-w-[90px]">{firebaseAuthUser.displayName || 'Connected'}</span>
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="w-3.5 h-3.5 text-[#5E7153]" />
-                    <span>{isAr ? 'حساب Google' : 'Google Auth'}</span>
-                  </>
-                )}
-              </button>
-            )}
 
             {/* Current Active User Profile Pill */}
             <div 
