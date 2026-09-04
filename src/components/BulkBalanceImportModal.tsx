@@ -150,10 +150,10 @@ export const BulkBalanceImportModal: React.FC<BulkBalanceImportModalProps> = ({
           }
 
           // Find matching user in system
-          const matched = allUsers.find(
+          const matched = (allUsers || []).find(
             (u) =>
-              (emailCandidate && u.email.toLowerCase() === emailCandidate) ||
-              (idCandidate && u.id.toLowerCase() === idCandidate.toLowerCase())
+              (emailCandidate && (u.email || '').toLowerCase() === emailCandidate) ||
+              (idCandidate && (u.id || '').toLowerCase() === idCandidate.toLowerCase())
           );
 
           if (!matched) {

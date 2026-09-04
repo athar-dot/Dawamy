@@ -15,6 +15,8 @@ import {
   UserCheck,
   Calendar,
   Trash2,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 import { LeaveOrWfhRequest, RequestType, RequestStatus, UserProfile } from '../types';
 
@@ -22,6 +24,7 @@ interface RequestsListProps {
   requests: LeaveOrWfhRequest[];
   currentUser: UserProfile;
   onCancelRequest: (requestId: string) => void;
+  onInterruptLeave?: (request: LeaveOrWfhRequest) => void;
   lang: 'ar' | 'en';
 }
 
@@ -29,10 +32,11 @@ export const RequestsList: React.FC<RequestsListProps> = ({
   requests,
   currentUser,
   onCancelRequest,
+  onInterruptLeave,
   lang,
 }) => {
   const isAr = lang === 'ar';
-  const [activeTab, setActiveTab] = useState<'all' | 'remote' | 'annual' | 'sick' | 'pending'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'remote' | 'annual' | 'sick' | 'pending' | 'interrupted'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -47,6 +51,13 @@ export const RequestsList: React.FC<RequestsListProps> = ({
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#E9EDD9] text-[#2D3628] border border-[#D9E0D2]">
             <CheckCircle2 className="w-3.5 h-3.5 text-[#5E7153]" />
             {isAr ? 'معتمد رسمياً' : 'Approved'}
+          </span>
+        );
+      case 'interrupted':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#FFF1F2] text-[#E11D48] border border-[#FFE4E6]">
+            <RotateCcw className="w-3.5 h-3.5 text-[#E11D48]" />
+            {isAr ? 'تم قطع الإجازة (استدعاء طارئ)' : 'Leave Recalled / Interrupted'}
           </span>
         );
       case 'pending_manager':
@@ -87,8 +98,10 @@ export const RequestsList: React.FC<RequestsListProps> = ({
         return <Palmtree className="w-4 h-4 text-[#5E7153]" />;
       case 'sick_leave':
         return <Stethoscope className="w-4 h-4 text-[#8C5A28]" />;
+      case 'emergency_leave':
+        return <AlertCircle className="w-4 h-4 text-[#9A3412]" />;
       default:
-        return <AlertCircle className="w-4 h-4 text-[#8C5A28]" />;
+        return <Clock className="w-4 h-4 text-[#065F46]" />;
     }
   };
 
@@ -102,24 +115,28 @@ export const RequestsList: React.FC<RequestsListProps> = ({
         return isAr ? 'إجازة مرضية' : 'Sick Leave';
       case 'emergency_leave':
         return isAr ? 'إجازة اضطرارية' : 'Emergency Leave';
+      case 'half_day':
+        return isAr ? 'استئذان (نصف يوم)' : 'Half-day Leave';
       default:
         return isAr ? 'دوام مرن' : 'Flexible Hours';
     }
   };
 
   // Filter requests
-  const filtered = requests.filter((r) => {
+  const filtered = (requests || []).filter((r) => {
+    if (!r) return false;
     if (activeTab === 'remote' && r.type !== 'remote') return false;
     if (activeTab === 'annual' && r.type !== 'annual_leave') return false;
     if (activeTab === 'sick' && r.type !== 'sick_leave' && r.type !== 'emergency_leave') return false;
     if (activeTab === 'pending' && r.status !== 'pending_manager' && r.status !== 'pending_hr') return false;
+    if (activeTab === 'interrupted' && r.status !== 'interrupted') return false;
 
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = r.userName.toLowerCase().includes(q);
-      const matchId = r.id.toLowerCase().includes(q);
-      const matchReason = r.reason.toLowerCase().includes(q);
-      const matchDept = r.department.toLowerCase().includes(q);
+      const q = searchQuery.toLowerCase().trim();
+      const matchName = (r.userName || '').toLowerCase().includes(q);
+      const matchId = (r.id || '').toLowerCase().includes(q);
+      const matchReason = (r.reason || '').toLowerCase().includes(q);
+      const matchDept = (r.department || '').toLowerCase().includes(q);
       return matchName || matchId || matchReason || matchDept;
     }
     return true;
@@ -133,10 +150,12 @@ export const RequestsList: React.FC<RequestsListProps> = ({
         <div>
           <h3 className="text-lg sm:text-xl font-bold text-[#2D3628] flex items-center gap-2">
             <Calendar className="w-5 h-5 text-[#5E7153]" />
-            <span>{isAr ? 'سجل طلبات العمل عن بُعد والإجازات' : 'Requests Log & Approvals'}</span>
+            <span>{isAr ? 'سجل طلبات العمل عن بُعد والإجازات' : 'Requests Log & Leave Governance'}</span>
           </h3>
           <p className="text-xs text-[#65635E] mt-0.5">
-            {isAr ? 'متابعة مسار الاعتمادات وتاريخ الطلبات السابقة والحالية' : 'Track workflows, approvals timeline, and past archives'}
+            {isAr
+              ? 'متابعة مسار الاعتمادات وتاريخ الطلبات، مع إمكانية استدعاء وقطع الإجازات الطارئة'
+              : 'Track approval pipelines, active archives, and emergency leave interruption audits'}
           </p>
         </div>
 
@@ -161,13 +180,14 @@ export const RequestsList: React.FC<RequestsListProps> = ({
           { id: 'annual', labelAr: 'الإجازات السنوية', labelEn: 'Annual Leaves', count: requests.filter((r) => r.type === 'annual_leave').length },
           { id: 'sick', labelAr: 'المرضية والاضطرارية', labelEn: 'Sick & Emergency', count: requests.filter((r) => r.type === 'sick_leave' || r.type === 'emergency_leave').length },
           { id: 'pending', labelAr: 'قيد المراجعة', labelEn: 'Pending Review', count: requests.filter((r) => r.status.startsWith('pending')).length },
+          { id: 'interrupted', labelAr: 'مقطوعة (استدعاء طارئ)', labelEn: 'Recalled/Interrupted', count: requests.filter((r) => r.status === 'interrupted').length },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium whitespace-nowrap transition ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium whitespace-nowrap transition cursor-pointer ${
               activeTab === tab.id
-                ? 'bg-[#5E7153] text-white font-bold shadow-sm'
+                ? 'bg-[#5E7153] text-white font-bold shadow-xs'
                 : 'text-[#65635E] hover:text-[#2D3628] hover:bg-[#EFECE4]'
             }`}
           >
@@ -197,13 +217,21 @@ export const RequestsList: React.FC<RequestsListProps> = ({
           {filtered.map((req) => {
             const isExpanded = expandedId === req.id;
             const isOwnRequest = req.userId === currentUser.id;
+            const isInterrupted = req.status === 'interrupted';
+            const canInterrupt =
+              !isInterrupted &&
+              req.status === 'approved' &&
+              (req.type === 'annual_leave' || req.type === 'sick_leave' || req.type === 'emergency_leave') &&
+              (currentUser.role === 'manager' || currentUser.role === 'hr');
 
             return (
               <div
                 key={req.id}
                 className={`border rounded-2xl transition-all ${
-                  isExpanded
-                    ? 'bg-[#FAF9F6] border-[#5E7153]/50 shadow-sm ring-1 ring-[#5E7153]/20'
+                  isInterrupted
+                    ? 'bg-[#FFF1F2]/30 border-[#FECDD3]'
+                    : isExpanded
+                    ? 'bg-[#FAF9F6] border-[#5E7153]/50 shadow-xs ring-1 ring-[#5E7153]/20'
                     : 'bg-[#FAF9F6] hover:bg-[#F5F3ED] border-[#E5E2D9]'
                 }`}
               >
@@ -241,7 +269,11 @@ export const RequestsList: React.FC<RequestsListProps> = ({
                   {/* Right badges & arrow */}
                   <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E5E2D9]">
                     <div>{getStatusBadge(req.status)}</div>
-                    <button className="p-1 rounded-lg text-[#65635E] hover:text-[#2D3628]">
+                    <button
+                      type="button"
+                      aria-label="Toggle details"
+                      className="p-1 rounded-lg text-[#65635E] hover:text-[#2D3628]"
+                    >
                       {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                     </button>
                   </div>
@@ -269,7 +301,31 @@ export const RequestsList: React.FC<RequestsListProps> = ({
                       </p>
                     </div>
 
-                    {/* Handover & Plan (Handover plan only for remote work) */}
+                    {/* Interrupted Audit Box */}
+                    {isInterrupted && (
+                      <div className="p-3.5 rounded-xl bg-white border border-[#FECDD3] text-xs space-y-2">
+                        <div className="flex items-center justify-between font-bold text-[#E11D48]">
+                          <span className="flex items-center gap-1.5">
+                            <RotateCcw className="w-4 h-4" />
+                            {isAr ? 'إجراء قطع الإجازة والاستدعاء الطارئ:' : 'Emergency Interruption Audit:'}
+                          </span>
+                          <span className="text-[11px] font-semibold text-[#65635E]">
+                            {isAr ? 'تاريخ المباشرة الفعلي:' : 'Effective Return Date:'} <strong>{req.interruptedEffectiveDate}</strong>
+                          </span>
+                        </div>
+                        <p className="text-[#43423E] leading-relaxed">
+                          <strong>{isAr ? 'سبب الاستدعاء الطارئ:' : 'Recall Reason:'}</strong> {req.interruptedReason}
+                        </p>
+                        <div className="flex items-center justify-between pt-1 border-t border-[#FFE4E6] text-[11px]">
+                          <span className="text-[#65635E]">{isAr ? 'المسؤول الإداري:' : 'Authorized by:'} {req.interruptedBy}</span>
+                          <span className="text-[#059669] font-bold">
+                            +{req.refundedDays} {isAr ? 'أيام أعيدت لرصيد الموظف تلقائياً' : 'days refunded to employee balance'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Handover & Plan */}
                     {(req.handoverColleague || (req.type === 'remote' && req.handoverPlan)) && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {req.handoverColleague && (
@@ -295,18 +351,32 @@ export const RequestsList: React.FC<RequestsListProps> = ({
                       </div>
                     )}
 
-                    {/* Actions if pending & owner */}
-                    {isOwnRequest && req.status.startsWith('pending') && (
-                      <div className="flex justify-end pt-2">
+                    {/* Actions bar */}
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E2D9]">
+                      {/* Cancel request if pending & owner */}
+                      {isOwnRequest && req.status.startsWith('pending') && (
                         <button
+                          type="button"
                           onClick={() => onCancelRequest(req.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FDF0EE] hover:bg-[#FCE3E0] text-[#9E3B30] border border-[#F5C4BE] text-xs font-semibold transition"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FDF0EE] hover:bg-[#FCE3E0] text-[#9E3B30] border border-[#F5C4BE] text-xs font-semibold transition cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           <span>{isAr ? 'إلغاء الطلب' : 'Cancel Request'}</span>
                         </button>
-                      </div>
-                    )}
+                      )}
+
+                      {/* Interrupt Leave if Manager/HR and approved active leave */}
+                      {canInterrupt && onInterruptLeave && (
+                        <button
+                          type="button"
+                          onClick={() => onInterruptLeave(req)}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#FFF1F2] hover:bg-[#FFE4E6] text-[#E11D48] border border-[#FECDD3] text-xs font-bold transition cursor-pointer shadow-xs"
+                        >
+                          <AlertTriangle className="w-4 h-4 text-[#E11D48]" />
+                          <span>{isAr ? 'قطع الإجازة واستدعاء الموظف (إجراء طارئ)' : 'Recall Employee / Interrupt Leave'}</span>
+                        </button>
+                      )}
+                    </div>
 
                   </div>
                 )}

@@ -307,6 +307,40 @@ export async function deleteEmployeeFromFirestore(userId: string) {
 // ----------------------------------------------------
 // NOTIFICATIONS (FIRESTORE REAL-TIME SYNC)
 // ----------------------------------------------------
+export function safeFormatTimestamp(rawTimestamp: unknown): string {
+  if (!rawTimestamp) return 'الآن';
+  if (typeof rawTimestamp === 'string') return rawTimestamp;
+  if (typeof rawTimestamp === 'number') {
+    try {
+      const d = new Date(rawTimestamp);
+      return d.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return 'الآن';
+    }
+  }
+  // If it's a Firestore Timestamp or object with seconds
+  if (typeof rawTimestamp === 'object') {
+    const obj = rawTimestamp as { seconds?: number; toDate?: () => Date };
+    if (typeof obj.toDate === 'function') {
+      try {
+        const d = obj.toDate();
+        return d.toLocaleDateString('ar-SA', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+      } catch {
+        return 'الآن';
+      }
+    }
+    if (typeof obj.seconds === 'number') {
+      try {
+        const d = new Date(obj.seconds * 1000);
+        return d.toLocaleDateString('ar-SA', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+      } catch {
+        return 'الآن';
+      }
+    }
+  }
+  return 'الآن';
+}
+
 export function subscribeToNotifications(callback: (notifs: NotificationItem[]) => void) {
   const q = collection(db, 'notifications');
   return onSnapshot(
@@ -315,7 +349,18 @@ export function subscribeToNotifications(callback: (notifs: NotificationItem[]) 
       if (!snapshot.empty) {
         const notifs: NotificationItem[] = [];
         snapshot.forEach((docSnap) => {
-          notifs.push({ id: docSnap.id, ...(docSnap.data() as Omit<NotificationItem, 'id'>) });
+          const raw = docSnap.data() || {};
+          notifs.push({
+            id: docSnap.id,
+            title: typeof raw.title === 'string' ? raw.title : (typeof raw.titleEn === 'string' ? raw.titleEn : 'إشعار جديد'),
+            titleEn: typeof raw.titleEn === 'string' ? raw.titleEn : undefined,
+            message: typeof raw.message === 'string' ? raw.message : (typeof raw.messageEn === 'string' ? raw.messageEn : ''),
+            messageEn: typeof raw.messageEn === 'string' ? raw.messageEn : undefined,
+            type: raw.type || 'system',
+            timestamp: safeFormatTimestamp(raw.timestamp),
+            read: Boolean(raw.read),
+            requestId: typeof raw.requestId === 'string' ? raw.requestId : undefined,
+          });
         });
         setTimeout(() => callback(notifs), 0);
       }
@@ -328,7 +373,11 @@ export function subscribeToNotifications(callback: (notifs: NotificationItem[]) 
 
 export async function addNotificationToFirestore(notif: NotificationItem) {
   try {
-    await setDoc(doc(db, 'notifications', notif.id), notif);
+    const payload = {
+      ...notif,
+      timestamp: safeFormatTimestamp(notif.timestamp),
+    };
+    await setDoc(doc(db, 'notifications', notif.id), payload, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, `notifications/${notif.id}`);
   }
@@ -336,9 +385,33 @@ export async function addNotificationToFirestore(notif: NotificationItem) {
 
 export async function markNotificationAsReadInFirestore(notifId: string) {
   try {
-    await updateDoc(doc(db, 'notifications', notifId), { read: true });
+    await setDoc(doc(db, 'notifications', notifId), { read: true }, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `notifications/${notifId}`);
+  }
+}
+
+export async function markAllNotificationsAsReadInFirestore(notifIds: string[]) {
+  try {
+    const batch = writeBatch(db);
+    for (const id of notifIds) {
+      batch.set(doc(db, 'notifications', id), { read: true }, { merge: true });
+    }
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, 'notifications/batch');
+  }
+}
+
+export async function clearAllNotificationsInFirestore(notifIds: string[]) {
+  try {
+    const batch = writeBatch(db);
+    for (const id of notifIds) {
+      batch.delete(doc(db, 'notifications', id));
+    }
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'notifications/batch');
   }
 }
 

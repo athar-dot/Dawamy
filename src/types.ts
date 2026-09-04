@@ -2,7 +2,7 @@ export type UserRole = 'employee' | 'manager' | 'hr';
 
 export type RequestType = 'remote' | 'annual_leave' | 'sick_leave' | 'emergency_leave' | 'half_day';
 
-export type RequestStatus = 'pending_manager' | 'pending_hr' | 'approved' | 'rejected' | 'cancelled';
+export type RequestStatus = 'pending_manager' | 'pending_hr' | 'approved' | 'rejected' | 'cancelled' | 'interrupted';
 
 export type WorkStatus = 'in_office' | 'wfh_active' | 'deep_focus' | 'in_break' | 'in_meeting' | 'offline';
 
@@ -74,6 +74,17 @@ export interface LeaveOrWfhRequest {
   approvedByManagerAt?: string;
   approvedByHrAt?: string;
   rejectedReason?: string;
+  // Leave Recall / Early Interruption by Management
+  interruptedAt?: string;
+  interruptedBy?: string;
+  interruptedById?: string;
+  interruptedReason?: string;
+  interruptedEffectiveDate?: string;
+  originalTotalDays?: number;
+  refundedDays?: number;
+  actualUsedDays?: number;
+  medicalReportAttached?: boolean;
+  medicalReportNumber?: string;
 }
 
 export interface TeamMemberStatus {
@@ -101,7 +112,7 @@ export interface NotificationItem {
   titleEn?: string;
   message: string;
   messageEn?: string;
-  type: 'approval' | 'rejection' | 'reminder' | 'system';
+  type: 'approval' | 'rejection' | 'reminder' | 'system' | 'request';
   timestamp: string;
   read: boolean;
   requestId?: string;
@@ -118,9 +129,26 @@ export interface PolicyFaqItem {
 // ----------------------------------------------------
 // BIOMETRIC ATTENDANCE & PUNCH DEVICE INTEGRATION TYPES
 // ----------------------------------------------------
-export type AttendanceStatus = 'present' | 'late' | 'early_leave' | 'absent' | 'on_leave' | 'wfh';
+export type AttendanceStatus = 'present' | 'late' | 'early_leave' | 'late_and_early' | 'absent' | 'on_leave' | 'wfh' | 'weekend';
 
 export type BiometricVerifyMethod = 'fingerprint' | 'face' | 'card' | 'manual';
+
+export interface CompanyWorkSchedule {
+  id: string;
+  companyName: string;
+  companyNameEn?: string;
+  workDays: number[]; // 0: Sunday, 1: Monday, 2: Tuesday, 3: Wednesday, 4: Thursday, 5: Friday, 6: Saturday
+  dailyWorkHours: number; // e.g. 8.0
+  startTime: string; // "08:00" or "09:00" (HH:mm)
+  endTime: string; // "16:00" or "17:00" (HH:mm)
+  checkInGraceMinutes: number; // e.g. 15
+  checkOutGraceMinutes: number; // e.g. 5
+  preset: 'sun_thu_8h' | 'sat_thu_8h' | 'sun_thu_7h' | 'sat_thu_7h' | 'custom';
+  description?: string;
+  descriptionEn?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
 
 export interface AttendanceRecord {
   id: string;
@@ -132,11 +160,18 @@ export interface AttendanceRecord {
   departmentEn?: string;
   biometricEnrollId?: string;
   date: string; // YYYY-MM-DD
-  checkInTime?: string; // HH:mm:ss
-  checkOutTime?: string; // HH:mm:ss
+  checkInTime?: string; // HH:mm:ss or HH:mm
+  checkOutTime?: string; // HH:mm:ss or HH:mm
   status: AttendanceStatus;
   totalWorkingHours?: number; // Calculated hours worked
-  lateMinutes?: number; // Delay past expected start time (e.g. 09:00 AM)
+  lateMinutes?: number; // Delay past expected start time (morning delay)
+  earlyLeaveMinutes?: number; // Early departure minutes before official end time
+  dailyRequiredHours?: number; // Required official hours for the day (e.g. 8.0)
+  dailyShortageMinutes?: number; // Total daily delay/deficit in minutes (late check-in + early leave or hours gap)
+  dailyShortageHours?: number; // Total daily shortage in hours
+  officialStartTime?: string; // e.g. "08:00"
+  officialEndTime?: string; // e.g. "16:00"
+  isWeekend?: boolean;
   verifyMethod?: BiometricVerifyMethod;
   deviceId?: string;
   deviceName?: string;

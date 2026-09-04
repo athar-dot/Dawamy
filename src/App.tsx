@@ -24,6 +24,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  FileSpreadsheet,
+  Sliders,
 } from 'lucide-react';
 import {
   UserProfile,
@@ -37,6 +39,7 @@ import {
   BiometricDeviceConfig,
   BiometricVerifyMethod,
   SalaryDeduction,
+  CompanyWorkSchedule,
 } from './types';
 import {
   INITIAL_USERS,
@@ -58,10 +61,19 @@ import { AiStandupGenerator } from './components/AiStandupGenerator';
 import { AnalyticsView } from './components/AnalyticsView';
 import { HrEmployeeManagement } from './components/HrEmployeeManagement';
 import { BiometricAttendanceView } from './components/BiometricAttendanceView';
+import { HrWorkHoursReportView } from './components/HrWorkHoursReportView';
+import { CompanyScheduleModal } from './components/CompanyScheduleModal';
 import { PayrollAndDeductionsView } from './components/PayrollAndDeductionsView';
 import { NewRequestModal } from './components/NewRequestModal';
+import { InterruptLeaveModal } from './components/InterruptLeaveModal';
 import { VirtualCheckinModal } from './components/VirtualCheckinModal';
 import { AuthDomainHelpModal } from './components/AuthDomainHelpModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import {
+  DEFAULT_COMPANY_SCHEDULE,
+  applyScheduleToRecord,
+  calculateAttendanceMetrics,
+} from './utils/workScheduleUtils';
 import { api } from './services/api';
 import {
   testFirestoreConnection,
@@ -77,6 +89,8 @@ import {
   subscribeToNotifications,
   addNotificationToFirestore,
   markNotificationAsReadInFirestore,
+  markAllNotificationsAsReadInFirestore,
+  clearAllNotificationsInFirestore,
   saveVirtualCheckIn,
   loginWithGoogle,
   logoutUser,
@@ -159,14 +173,68 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_DEDUCTIONS;
   });
 
-  // Active Tab (Reorganized with Payroll & Analytics prominently placed)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'approvals' | 'biometric' | 'payroll' | 'analytics' | 'admin_users' | 'calendar' | 'advisor'>('dashboard');
+  // Flexible Company Work Schedule Policy State
+  const [companySchedule, setCompanySchedule] = useState<CompanyWorkSchedule>(() => {
+    try {
+      const saved = localStorage.getItem('dawamy_company_schedule');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Error loading company schedule', e);
+    }
+    return DEFAULT_COMPANY_SCHEDULE;
+  });
+
+  const [isCompanyScheduleModalOpen, setIsCompanyScheduleModalOpen] = useState(false);
+
+  const handleSaveCompanySchedule = async (updated: CompanyWorkSchedule) => {
+    setCompanySchedule(updated);
+    try {
+      localStorage.setItem('dawamy_company_schedule', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+    // Automatically recalculate existing records according to the new company policy
+    setAttendanceRecords((prev) => {
+      const updatedRecords = prev.map((r) => applyScheduleToRecord(r, updated));
+      try {
+        localStorage.setItem('dawamy_attendance', JSON.stringify(updatedRecords));
+      } catch (e) {
+        console.error(e);
+      }
+      return updatedRecords;
+    });
+
+    const notifTitle = isAr ? 'تم تحديث سياسة وساعات الدوام' : 'Work Schedule Policy Updated';
+    const notifMsg = isAr
+      ? `تم حفظ وتطبيق سياسة الدوام الجديدة (${updated.workDays.length} أيام أسبوعياً، ${updated.dailyWorkHours} ساعات عمل رسمية يومياً من ${updated.startTime} إلى ${updated.endTime}).`
+      : `Schedule policy updated: ${updated.dailyWorkHours}h/day from ${updated.startTime} to ${updated.endTime}.`;
+
+    setNotifications((prev) => [
+      {
+        id: `notif-sched-${Date.now()}`,
+        title: notifTitle,
+        titleEn: updated.companyNameEn || 'Work Schedule Policy Updated',
+        message: notifMsg,
+        messageEn: `Schedule policy updated: ${updated.dailyWorkHours}h/day from ${updated.startTime} to ${updated.endTime}.`,
+        type: 'system',
+        read: false,
+        timestamp: isAr ? 'الآن' : 'Just now',
+      },
+      ...prev,
+    ]);
+    showToast(notifTitle, 'success');
+  };
+
+  // Active Tab (Reorganized with Payroll, Shift Audit & Analytics prominently placed)
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'approvals' | 'biometric' | 'hr_schedule' | 'payroll' | 'analytics' | 'admin_users' | 'calendar' | 'advisor'>('dashboard');
 
   // Mobile navigation drawer toggle
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Modals
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
+  const [isInterruptModalOpen, setIsInterruptModalOpen] = useState(false);
+  const [selectedRequestToInterrupt, setSelectedRequestToInterrupt] = useState<LeaveOrWfhRequest | null>(null);
   const [isCheckinOpen, setIsCheckinOpen] = useState(false);
   const [isStandupOpen, setIsStandupOpen] = useState(false);
   const [isAuthDomainModalOpen, setIsAuthDomainModalOpen] = useState(false);
@@ -682,6 +750,117 @@ export default function App() {
     showToast(isAr ? 'تم إلغاء الطلب' : 'Request cancelled', 'info');
   };
 
+  // Open Leave Interruption & Recall Modal (for manager / HR)
+  const handleOpenInterruptModal = (req: LeaveOrWfhRequest) => {
+    setSelectedRequestToInterrupt(req);
+    setIsInterruptModalOpen(true);
+  };
+
+  // Confirm Leave Interruption & Recall
+  const handleConfirmInterruptLeave = (
+    requestId: string,
+    effectiveReturnDate: string,
+    reason: string,
+    refundedDays: number,
+    actualUsedDays: number
+  ) => {
+    const req = requests.find((r) => r.id === requestId);
+    if (!req) return;
+
+    const interruptedByName = `${currentUser.name} (${currentUser.role === 'hr' ? (isAr ? 'الموارد البشرية' : 'HR') : (isAr ? 'إدارة النظام' : 'Management')})`;
+
+    // 1. Update request status to 'interrupted'
+    const updatedRequests = requests.map((r) => {
+      if (r.id === requestId) {
+        return {
+          ...r,
+          status: 'interrupted' as RequestStatus,
+          interruptedAt: new Date().toISOString(),
+          interruptedBy: interruptedByName,
+          interruptedById: currentUser.id,
+          interruptedReason: reason,
+          interruptedEffectiveDate: effectiveReturnDate,
+          originalTotalDays: r.totalDays,
+          refundedDays,
+          actualUsedDays,
+        };
+      }
+      return r;
+    });
+    setRequests(updatedRequests);
+
+    // Sync to Firestore
+    updateRequestStatusInFirestore(requestId, 'interrupted', {
+      interruptedAt: new Date().toISOString(),
+      interruptedBy: interruptedByName,
+      interruptedById: currentUser.id,
+      interruptedReason: reason,
+      interruptedEffectiveDate: effectiveReturnDate,
+      originalTotalDays: req.totalDays,
+      refundedDays,
+      actualUsedDays,
+    }).catch((e) => console.warn(e));
+
+    // 2. Refund employee balance & update today status if effective return is today or past
+    const targetUserId = req.userId;
+    const isTodayOrPast = effectiveReturnDate <= new Date().toISOString().split('T')[0];
+
+    const updatedUsers = users.map((u) => {
+      if (u.id === targetUserId) {
+        const isAnnual = req.type === 'annual_leave';
+        return {
+          ...u,
+          balances: {
+            ...u.balances,
+            annualLeaveUsed: isAnnual ? Math.max(0, u.balances.annualLeaveUsed - refundedDays) : u.balances.annualLeaveUsed,
+            sickLeaveUsed: req.type === 'sick_leave' ? Math.max(0, u.balances.sickLeaveUsed - refundedDays) : u.balances.sickLeaveUsed,
+            emergencyLeaveUsed: req.type === 'emergency_leave' ? Math.max(0, u.balances.emergencyLeaveUsed - refundedDays) : u.balances.emergencyLeaveUsed,
+          },
+          todayStatus: isTodayOrPast ? ('in_office' as WorkStatus) : u.todayStatus,
+        };
+      }
+      return u;
+    });
+    setUsers(updatedUsers);
+
+    // Sync user in Firestore
+    const updatedUserObj = updatedUsers.find((u) => u.id === targetUserId);
+    if (updatedUserObj) {
+      updateUserInFirestore(targetUserId, updatedUserObj).catch((e) => console.warn(e));
+    }
+
+    // Update team member status if effective return is today or past
+    if (isTodayOrPast) {
+      setTeamMembers((prev) =>
+        prev.map((m) => (m.id === targetUserId ? { ...m, status: 'in_office' } : m))
+      );
+    }
+
+    // 3. Dispatch official notification to employee
+    const recallNotif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      title: isAr ? '⚠️ إشعار استدعاء رسمي: قطع الإجازة' : 'Official Notice: Leave Recalled',
+      titleEn: 'Official Notice: Leave Recalled for Emergency',
+      message: isAr
+        ? `قامت إدارة الشركة (${interruptedByName}) بقطع إجازتك رقم (${requestId}) لظروف العمل الطارئة. تاريخ المباشرة: ${effectiveReturnDate}. تم استرجاع (+${refundedDays}) أيام إلى رصيد إجازاتك.`
+        : `Management recalled you and interrupted leave (${requestId}). Effective return date: ${effectiveReturnDate}. (+${refundedDays}) days refunded.`,
+      messageEn: `Management recalled you and interrupted leave (${requestId}). Effective return date: ${effectiveReturnDate}. (+${refundedDays}) days refunded.`,
+      type: 'system',
+      timestamp: isAr ? 'الآن' : 'Just now',
+      read: false,
+      requestId,
+    };
+    setNotifications((prev) => [recallNotif, ...prev]);
+    addNotificationToFirestore(recallNotif).catch((e) => console.warn(e));
+
+    showToast(
+      isAr
+        ? `تم قطع إجازة (${req.userName}) بنجاح واسترجاع (+${refundedDays}) يوم لرصيده!`
+        : `Leave interrupted successfully. (+${refundedDays}) days refunded.`,
+      'success'
+    );
+  };
+
   // Change immediate work status
   const handleChangeWorkStatus = (status: WorkStatus) => {
     setUsers((prev) =>
@@ -969,43 +1148,45 @@ export default function App() {
     }
   };
 
-  // Biometric Attendance Punch Event (From Simulator or Biometric Terminal)
+  // Biometric Attendance Punch Event (From Simulator, Device or HR Action)
   const handleRecordPunch = async ({
     userId,
     type,
     deviceId,
     verifyMethod = 'fingerprint',
+    customTime,
+    customDate,
   }: {
     userId: string;
     type: 'check_in' | 'check_out';
     deviceId?: string;
     verifyMethod?: BiometricVerifyMethod;
+    customTime?: string;
+    customDate?: string;
   }) => {
     try {
       const targetUser = users.find((u) => u.id === userId) || currentUser;
-      const todayDate = new Date().toISOString().split('T')[0];
+      const todayDate = customDate || new Date().toISOString().split('T')[0];
       const now = new Date();
-      const timeNowStr = now.toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', {
+      const timeNowStr = customTime || now.toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', {
         hour: '2-digit',
         minute: '2-digit',
+        hour12: false,
       });
 
       const existingRec = attendanceRecords.find((r) => r.userId === targetUser.id && r.date === todayDate);
       const chosenDevice = biometricDevices.find((d) => d.id === deviceId) || biometricDevices[0];
 
-      let status: AttendanceRecord['status'] = 'present';
-      let lateMinutes = 0;
+      const inTime = type === 'check_in' ? timeNowStr : (existingRec?.checkInTime || timeNowStr);
+      const outTime = type === 'check_out' ? timeNowStr : existingRec?.checkOutTime;
 
-      if (type === 'check_in') {
-        const workStart = new Date();
-        workStart.setHours(9, 0, 0, 0);
-        if (now.getTime() > workStart.getTime()) {
-          lateMinutes = Math.floor((now.getTime() - workStart.getTime()) / (1000 * 60));
-          if (lateMinutes > 15) {
-            status = 'late';
-          }
-        }
-      }
+      const metrics = calculateAttendanceMetrics({
+        checkInTime: inTime,
+        checkOutTime: outTime,
+        date: todayDate,
+        schedule: companySchedule,
+        existingLateWaived: !!existingRec?.isLateDeductionWaived,
+      });
 
       const newRecord: AttendanceRecord = {
         id: existingRec ? existingRec.id : `att-${targetUser.id}-${todayDate}`,
@@ -1014,10 +1195,17 @@ export default function App() {
         userEmail: targetUser.email,
         department: targetUser.department,
         date: todayDate,
-        checkInTime: type === 'check_in' ? timeNowStr : (existingRec?.checkInTime || timeNowStr),
-        checkOutTime: type === 'check_out' ? timeNowStr : existingRec?.checkOutTime,
-        status: existingRec?.status || status,
-        lateMinutes: existingRec?.lateMinutes !== undefined ? existingRec.lateMinutes : lateMinutes,
+        checkInTime: inTime,
+        checkOutTime: outTime,
+        status: metrics.status,
+        lateMinutes: metrics.lateMinutes,
+        earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+        dailyRequiredHours: metrics.dailyRequiredHours,
+        dailyShortageMinutes: metrics.dailyShortageMinutes,
+        dailyShortageHours: metrics.dailyShortageHours,
+        officialStartTime: companySchedule.startTime,
+        officialEndTime: companySchedule.endTime,
+        totalWorkingHours: metrics.totalWorkingHours,
         verifyMethod,
         deviceId: chosenDevice?.id,
         deviceName: chosenDevice?.name || (isAr ? 'جهاز المقر الرئيسي' : 'HQ Terminal'),
@@ -1025,10 +1213,6 @@ export default function App() {
         createdAt: existingRec?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-
-      if (newRecord.checkInTime && newRecord.checkOutTime) {
-        newRecord.totalWorkingHours = 8.0;
-      }
 
       setAttendanceRecords((prev) => {
         const idx = prev.findIndex((r) => r.id === newRecord.id);
@@ -1290,10 +1474,34 @@ export default function App() {
           onSelectUser={handleSelectUser}
           notifications={notifications}
           onMarkNotificationAsRead={(id) => {
-            setNotifications(notifications.map((n) => (n.id === id ? { ...n, read: true } : n)));
+            setNotifications((prev) => (Array.isArray(prev) ? prev.map((n) => (n.id === id ? { ...n, read: true } : n)) : []));
             markNotificationAsReadInFirestore(id).catch((e) => console.warn(e));
           }}
-          onClearNotifications={() => setNotifications([])}
+          onMarkAllNotificationsAsRead={() => {
+            setNotifications((prev) => (Array.isArray(prev) ? prev.map((n) => ({ ...n, read: true })) : []));
+            const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
+            if (unreadIds.length > 0) {
+              markAllNotificationsAsReadInFirestore(unreadIds).catch((e) => console.warn(e));
+            }
+          }}
+          onNotificationClick={(notif) => {
+            if (notif.requestId || notif.type === 'request' || notif.type === 'approval') {
+              if (currentUser.role === 'manager' || currentUser.role === 'hr') {
+                setActiveTab('approvals');
+              } else {
+                setActiveTab('requests');
+              }
+            } else if (notif.id.includes('sched') || notif.title.includes('دوام') || notif.titleEn?.includes('Schedule')) {
+              setActiveTab(currentUser.role === 'hr' || currentUser.role === 'manager' ? 'hr_schedule' : 'biometric');
+            }
+          }}
+          onClearNotifications={() => {
+            const ids = notifications.map((n) => n.id);
+            setNotifications([]);
+            if (ids.length > 0) {
+              clearAllNotificationsInFirestore(ids).catch((e) => console.warn(e));
+            }
+          }}
           lang={lang}
           onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
           firebaseAuthUser={firebaseAuthUser}
@@ -1349,6 +1557,7 @@ export default function App() {
                   { id: 'requests', labelAr: 'سجل الطلبات', labelEn: 'Requests', icon: ClipboardList, badge: requests.length },
                   { id: 'approvals', labelAr: 'اعتمادات الفريق', labelEn: 'Approvals', icon: ShieldCheck, badge: pendingCount, highlightBadge: pendingCount > 0 },
                   { id: 'biometric', labelAr: 'البصمة والحضور', labelEn: 'Attendance', icon: Fingerprint, badge: attendanceRecords.length },
+                  { id: 'hr_schedule', labelAr: 'ساعات وتأخيرات الدوام (HR)', labelEn: 'Shift & Shortage Audit', icon: FileSpreadsheet },
                   { id: 'payroll', labelAr: 'الرواتب والخصومات', labelEn: 'Payroll & Deductions', icon: DollarSign, badge: deductions.filter((d) => d.status === 'applied').length },
                   { id: 'analytics', labelAr: 'التقارير وسجل الحضور', labelEn: 'Reports & Analytics', icon: BarChart3 },
                   { id: 'admin_users', labelAr: 'إدارة الموظفين (HR)', labelEn: 'HR Directory', icon: Users, badge: users.length },
@@ -1406,6 +1615,7 @@ export default function App() {
                 { id: 'requests', labelAr: 'سجل الطلبات', labelEn: 'Requests', icon: ClipboardList, badge: requests.length },
                 { id: 'approvals', labelAr: 'اعتمادات الفريق', labelEn: 'Team Approvals', icon: ShieldCheck, badge: pendingCount, highlightBadge: pendingCount > 0 },
                 { id: 'biometric', labelAr: 'البصمة والحضور', labelEn: 'Attendance', icon: Fingerprint, badge: attendanceRecords.length },
+                { id: 'hr_schedule', labelAr: 'كشف ساعات وتأخيرات الدوام', labelEn: 'Shift & Shortage Audit', icon: FileSpreadsheet, hrTag: true },
                 { id: 'payroll', labelAr: 'الرواتب والخصومات', labelEn: 'Payroll & Deductions', icon: DollarSign, badge: deductions.filter((d) => d.status === 'applied').length, payrollTag: true },
                 { id: 'analytics', labelAr: 'التقارير وسجل الحضور', labelEn: 'Reports & Analytics', icon: BarChart3 },
                 { id: 'admin_users', labelAr: 'إدارة الموظفين (HR)', labelEn: 'HR Directory', icon: Users, hrTag: true, badge: users.length },
@@ -1483,138 +1693,184 @@ export default function App() {
         {activeTab === 'dashboard' && (
           <div className="space-y-8 animate-in fade-in duration-150">
             {/* 1. Balances, Quick Actions, Status */}
-            <OverviewCards
-              currentUser={currentUser}
-              onOpenNewRequest={() => setIsNewRequestOpen(true)}
-              onOpenCheckinModal={() => setIsCheckinOpen(true)}
-              onOpenStandupModal={() => setIsStandupOpen(true)}
-              onChangeWorkStatus={handleChangeWorkStatus}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'بطاقات النظرة العامة والأرصدة' : 'Overview & Balances'}>
+              <OverviewCards
+                currentUser={currentUser}
+                onOpenNewRequest={() => setIsNewRequestOpen(true)}
+                onOpenCheckinModal={() => setIsCheckinOpen(true)}
+                onOpenStandupModal={() => setIsStandupOpen(true)}
+                onChangeWorkStatus={handleChangeWorkStatus}
+                lang={lang}
+              />
+            </ErrorBoundary>
 
             {/* 2. Daily Task Reminder & Deadlines */}
-            <DailyTaskReminder
-              currentUser={currentUser}
-              onUpdateTasks={handleUpdateDailyTasks}
-              onOpenStandupModal={() => setIsStandupOpen(true)}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'مساعد المهام اليومية' : 'Daily Task Assistant'}>
+              <DailyTaskReminder
+                currentUser={currentUser}
+                onUpdateTasks={handleUpdateDailyTasks}
+                onOpenStandupModal={() => setIsStandupOpen(true)}
+                lang={lang}
+              />
+            </ErrorBoundary>
 
             {/* 3. Requests Overview Table */}
-            <RequestsList
-              requests={requests}
-              currentUser={currentUser}
-              onCancelRequest={handleCancelRequest}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'سجل الطلبات' : 'Requests Overview'}>
+              <RequestsList
+                requests={requests}
+                currentUser={currentUser}
+                onCancelRequest={handleCancelRequest}
+                onInterruptLeave={handleOpenInterruptModal}
+                lang={lang}
+              />
+            </ErrorBoundary>
 
             {/* 4. Team Calendar preview */}
-            <TeamCalendarView
-              requests={requests}
-              teamMembers={teamMembers}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'تقويم تواجد الفريق' : 'Team Calendar Preview'}>
+              <TeamCalendarView
+                requests={requests}
+                teamMembers={teamMembers}
+                lang={lang}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === 'requests' && (
           <div className="animate-in fade-in duration-150">
-            <RequestsList
-              requests={requests}
-              currentUser={currentUser}
-              onCancelRequest={handleCancelRequest}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'سجل الطلبات والاعتمادات' : 'Requests & Approvals'}>
+              <RequestsList
+                requests={requests}
+                currentUser={currentUser}
+                onCancelRequest={handleCancelRequest}
+                onInterruptLeave={handleOpenInterruptModal}
+                lang={lang}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === 'approvals' && (
           <div className="animate-in fade-in duration-150">
-            <ManagerApprovalView
-              pendingRequests={requests.filter((r) => r.status.startsWith('pending'))}
-              currentUser={currentUser}
-              teamMembers={teamMembers}
-              onApproveRequest={handleApproveRequest}
-              onRejectRequest={handleRejectRequest}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'مركز اعتمادات الإدارة' : 'Manager Approvals'}>
+              <ManagerApprovalView
+                pendingRequests={(requests || []).filter((r) => r?.status?.startsWith('pending'))}
+                allRequests={requests}
+                currentUser={currentUser}
+                teamMembers={teamMembers}
+                onApproveRequest={handleApproveRequest}
+                onRejectRequest={handleRejectRequest}
+                onInterruptLeave={handleOpenInterruptModal}
+                lang={lang}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === 'admin_users' && (
           <div className="animate-in fade-in duration-150">
-            <HrEmployeeManagement
-              users={users}
-              currentUser={currentUser}
-              onAddEmployee={handleAddEmployee}
-              onUpdateEmployee={handleUpdateEmployee}
-              onDeleteEmployee={handleDeleteEmployee}
-              onSelectUser={handleSelectUser}
-              onBatchUpdateBalances={handleBatchUpdateBalances}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'إدارة الموظفين والكوادر' : 'Employee Management'}>
+              <HrEmployeeManagement
+                users={users}
+                currentUser={currentUser}
+                onAddEmployee={handleAddEmployee}
+                onUpdateEmployee={handleUpdateEmployee}
+                onDeleteEmployee={handleDeleteEmployee}
+                onSelectUser={handleSelectUser}
+                onBatchUpdateBalances={handleBatchUpdateBalances}
+                lang={lang}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === 'biometric' && (
           <div className="animate-in fade-in duration-150">
-            <BiometricAttendanceView
-              currentUser={currentUser}
-              allUsers={users}
-              attendanceRecords={attendanceRecords}
-              biometricDevices={biometricDevices}
-              onRecordPunch={handleRecordPunch}
-              onAddDevice={handleSaveBiometricDevice}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'منظومة البصمة وأجهزة الدوام' : 'Biometric Attendance'}>
+              <BiometricAttendanceView
+                currentUser={currentUser}
+                allUsers={users}
+                attendanceRecords={attendanceRecords}
+                biometricDevices={biometricDevices}
+                companySchedule={companySchedule}
+                onOpenScheduleModal={() => setIsCompanyScheduleModalOpen(true)}
+                onRecordPunch={handleRecordPunch}
+                onAddDevice={handleSaveBiometricDevice}
+                lang={lang}
+              />
+            </ErrorBoundary>
+          </div>
+        )}
+
+        {activeTab === 'hr_schedule' && (
+          <div className="animate-in fade-in duration-150">
+            <ErrorBoundary sectionTitle={isAr ? 'كشف ساعات وتأخيرات الدوام (HR)' : 'Shift & Shortage Audit'}>
+              <HrWorkHoursReportView
+                currentUser={currentUser}
+                allUsers={users}
+                attendanceRecords={attendanceRecords}
+                companySchedule={companySchedule}
+                onOpenScheduleModal={() => setIsCompanyScheduleModalOpen(true)}
+                onRecordPunch={handleRecordPunch}
+                lang={lang}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === 'payroll' && (
           <div className="animate-in fade-in duration-150">
-            <PayrollAndDeductionsView
-              currentUser={currentUser}
-              allUsers={users}
-              attendanceRecords={attendanceRecords}
-              deductions={deductions}
-              onSaveDeduction={handleSaveDeduction}
-              onWaiveDeduction={handleWaiveDeduction}
-              onRestoreDeduction={handleRestoreDeduction}
-              onWaiveAttendanceLate={handleWaiveAttendanceLate}
-              onRestoreAttendanceLate={handleRestoreAttendanceLate}
-              onUpdateUserSalary={handleUpdateUserSalary}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'مسير الرواتب والخصومات' : 'Payroll & Deductions'}>
+              <PayrollAndDeductionsView
+                currentUser={currentUser}
+                allUsers={users}
+                attendanceRecords={attendanceRecords}
+                deductions={deductions}
+                onSaveDeduction={handleSaveDeduction}
+                onWaiveDeduction={handleWaiveDeduction}
+                onRestoreDeduction={handleRestoreDeduction}
+                onWaiveAttendanceLate={handleWaiveAttendanceLate}
+                onRestoreAttendanceLate={handleRestoreAttendanceLate}
+                onUpdateUserSalary={handleUpdateUserSalary}
+                lang={lang}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === 'calendar' && (
           <div className="animate-in fade-in duration-150">
-            <TeamCalendarView
-              requests={requests}
-              teamMembers={teamMembers}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'تقويم الفريق والغياب' : 'Team Calendar'}>
+              <TeamCalendarView
+                requests={requests}
+                teamMembers={teamMembers}
+                lang={lang}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === 'advisor' && (
           <div className="animate-in fade-in duration-150">
-            <AiPolicyAdvisor
-              currentUser={currentUser}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'المستشار الذكي لسياسات العمل' : 'AI Policy Advisor'}>
+              <AiPolicyAdvisor
+                currentUser={currentUser}
+                lang={lang}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === 'analytics' && (
           <div className="animate-in fade-in duration-150">
-            <AnalyticsView
-              requests={requests}
-              users={users}
-              currentUser={currentUser}
-              lang={lang}
-            />
+            <ErrorBoundary sectionTitle={isAr ? 'تحليلات الحضور والعمل عن بُعد' : 'Analytics & Insights'}>
+              <AnalyticsView
+                requests={requests}
+                users={users}
+                currentUser={currentUser}
+                lang={lang}
+              />
+            </ErrorBoundary>
           </div>
         )}
       </main>
@@ -1699,7 +1955,20 @@ export default function App() {
         onClose={() => setIsNewRequestOpen(false)}
         currentUser={currentUser}
         teamMembers={teamMembers}
+        existingRequests={requests}
         onSubmitRequest={handleSubmitRequest}
+        lang={lang}
+      />
+
+      <InterruptLeaveModal
+        isOpen={isInterruptModalOpen}
+        onClose={() => {
+          setIsInterruptModalOpen(false);
+          setSelectedRequestToInterrupt(null);
+        }}
+        request={selectedRequestToInterrupt}
+        currentUser={currentUser}
+        onConfirmInterrupt={handleConfirmInterruptLeave}
         lang={lang}
       />
 
@@ -1716,6 +1985,14 @@ export default function App() {
         onClose={() => setIsStandupOpen(false)}
         currentUser={currentUser}
         onSyncTasksToReminder={handleUpdateDailyTasks}
+        lang={lang}
+      />
+
+      <CompanyScheduleModal
+        isOpen={isCompanyScheduleModalOpen}
+        onClose={() => setIsCompanyScheduleModalOpen(false)}
+        currentSchedule={companySchedule}
+        onSaveSchedule={handleSaveCompanySchedule}
         lang={lang}
       />
 

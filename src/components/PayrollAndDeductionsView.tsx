@@ -81,6 +81,11 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
   const [waiveReasonInput, setWaiveReasonInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [errorToast, setErrorToast] = useState<string | null>(null);
+  const [restoreConfirmTarget, setRestoreConfirmTarget] = useState<{
+    type: 'penalty' | 'attendance';
+    id: string;
+  } | null>(null);
 
   // Add Penalty Form State
   const [newPenaltyUserId, setNewPenaltyUserId] = useState(allUsers[0]?.id || '');
@@ -104,28 +109,33 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
   // Available departments
   const departments = useMemo(() => {
     const set = new Set<string>();
-    allUsers.forEach((u) => {
-      if (u.department) set.add(u.department);
+    const safeUsers = Array.isArray(allUsers) ? allUsers : [];
+    safeUsers.forEach((u) => {
+      if (u?.department) set.add(u.department);
     });
     return Array.from(set);
   }, [allUsers]);
 
   // Compute monthly calculations for all employees
   const employeeSummaries = useMemo(() => {
-    return allUsers.map((user) => {
+    const safeUsers = Array.isArray(allUsers) ? allUsers : [];
+    return safeUsers.map((user) => {
       return calculateMonthlyEmployeeLateSummary(user, attendanceRecords, deductions, selectedMonth);
     });
   }, [allUsers, attendanceRecords, deductions, selectedMonth]);
 
   // Filtered summaries
   const filteredSummaries = useMemo(() => {
-    return employeeSummaries.filter((sum) => {
+    const term = (searchTerm || '').toLowerCase().trim();
+    return (employeeSummaries || []).filter((sum) => {
+      if (!sum) return false;
       const matchSearch =
-        sum.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (sum.userNameEn && sum.userNameEn.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        sum.userEmail.toLowerCase().includes(searchTerm.toLowerCase());
+        !term ||
+        (sum.userName || '').toLowerCase().includes(term) ||
+        (sum.userNameEn && sum.userNameEn.toLowerCase().includes(term)) ||
+        (sum.userEmail || '').toLowerCase().includes(term);
 
-      const matchDept = departmentFilter === 'all' || sum.department.includes(departmentFilter);
+      const matchDept = departmentFilter === 'all' || (sum.department || '').includes(departmentFilter);
       return matchSearch && matchDept;
     });
   }, [employeeSummaries, searchTerm, departmentFilter]);
@@ -140,14 +150,15 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
     let netSalaries = 0;
     let lateEmployeesCount = 0;
 
-    employeeSummaries.forEach((sum) => {
-      grossSalaries += sum.baseSalary;
-      excessLateHours += sum.excessLateHours;
-      lateDeductions += sum.lateDeductionAmount;
-      penaltyDeductions += sum.penaltyDeductionsAmount;
-      waivedDeductions += sum.waivedDeductionsAmount;
-      netSalaries += sum.netSalary;
-      if (sum.totalLateOccurrences > 0) lateEmployeesCount++;
+    (employeeSummaries || []).forEach((sum) => {
+      if (!sum) return;
+      grossSalaries += Number(sum.baseSalary || 0);
+      excessLateHours += Number(sum.excessLateHours || 0);
+      lateDeductions += Number(sum.lateDeductionAmount || 0);
+      penaltyDeductions += Number(sum.penaltyDeductionsAmount || 0);
+      waivedDeductions += Number(sum.waivedDeductionsAmount || 0);
+      netSalaries += Number(sum.netSalary || 0);
+      if (Number(sum.totalLateOccurrences || 0) > 0) lateEmployeesCount++;
     });
 
     return {
@@ -172,13 +183,14 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
   const handleConfirmWaive = async () => {
     if (!showWaiveModal) return;
     if (!waiveReasonInput.trim()) {
-      alert(isAr ? 'يرجى كتابة سبب رفع الخصم أو تبرير الإعفاء' : 'Please provide waiver justification');
+      setErrorToast(isAr ? 'يرجى كتابة سبب رفع الخصم أو تبرير الإعفاء' : 'Please provide waiver justification');
+      setTimeout(() => setErrorToast(null), 4000);
       return;
     }
 
     try {
       setIsProcessing(true);
-      const officerName = `${currentUser.name} (${isAr ? 'الموارد البشرية' : 'HR'})`;
+      const officerName = `${currentUser?.name || 'مسؤول'} (${isAr ? 'الموارد البشرية' : 'HR'})`;
 
       if (showWaiveModal.type === 'penalty') {
         await onWaiveDeduction(showWaiveModal.id, officerName, waiveReasonInput);
@@ -192,26 +204,31 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
       setWaiveReasonInput('');
       setTimeout(() => setSuccessToast(null), 4000);
     } catch (err) {
-      alert(isAr ? 'حدث خطأ أثناء رفع الخصم' : 'Error waiving deduction');
+      console.error('Error waiving deduction:', err);
+      setErrorToast(isAr ? 'حدث خطأ أثناء رفع الخصم' : 'Error waiving deduction');
+      setTimeout(() => setErrorToast(null), 4000);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Handle Restore
-  const handleRestore = async (type: 'penalty' | 'attendance', id: string) => {
-    if (!window.confirm(isAr ? 'هل تريد إعادة تطبيق الخصم وإلغاء الإعفاء؟' : 'Restore this deduction?')) return;
+  // Handle Restore Confirm
+  const handleConfirmRestore = async () => {
+    if (!restoreConfirmTarget) return;
     try {
       setIsProcessing(true);
-      if (type === 'penalty') {
-        await onRestoreDeduction(id);
+      if (restoreConfirmTarget.type === 'penalty') {
+        await onRestoreDeduction(restoreConfirmTarget.id);
       } else {
-        await onRestoreAttendanceLate(id);
+        await onRestoreAttendanceLate(restoreConfirmTarget.id);
       }
+      setRestoreConfirmTarget(null);
       setSuccessToast(isAr ? 'تمت إعادة تطبيق الخصم بنجاح' : 'Deduction restored successfully');
       setTimeout(() => setSuccessToast(null), 4000);
     } catch (err) {
-      alert(isAr ? 'حدث خطأ أثناء إعادة الخصم' : 'Error restoring deduction');
+      console.error('Error restoring deduction:', err);
+      setErrorToast(isAr ? 'حدث خطأ أثناء إعادة الخصم' : 'Error restoring deduction');
+      setTimeout(() => setErrorToast(null), 4000);
     } finally {
       setIsProcessing(false);
     }
@@ -220,7 +237,7 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
   // Handle Add Penalty Submit
   const handleAddPenaltySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const user = allUsers.find((u) => u.id === newPenaltyUserId);
+    const user = (allUsers || []).find((u) => u?.id === newPenaltyUserId);
     if (!user) return;
 
     try {
@@ -235,12 +252,12 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
         month: selectedMonth,
         type: newPenaltyType,
         title: newPenaltyTitle || (isAr ? 'خصم جزاء إداري' : 'Disciplinary Deduction'),
-        amount: Number(newPenaltyAmount),
-        daysDeducted: Number(newPenaltyDays),
+        amount: Number(newPenaltyAmount) || 0,
+        daysDeducted: Number(newPenaltyDays) || 0,
         date: newPenaltyDate,
         status: 'applied',
         reason: newPenaltyReason,
-        issuedBy: `${currentUser.name} (${isAr ? 'الموارد البشرية' : 'HR'})`,
+        issuedBy: `${currentUser?.name || 'مسؤول'} (${isAr ? 'الموارد البشرية' : 'HR'})`,
         issuedAt: new Date().toISOString(),
       };
 
@@ -251,7 +268,9 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
       setSuccessToast(isAr ? 'تم تسجيل الخصم الإداري بنجاح' : 'Penalty recorded successfully');
       setTimeout(() => setSuccessToast(null), 4000);
     } catch (err) {
-      alert(isAr ? 'تعذر حفظ الخصم' : 'Failed to save penalty');
+      console.error('Error saving penalty:', err);
+      setErrorToast(isAr ? 'تعذر حفظ الخصم' : 'Failed to save penalty');
+      setTimeout(() => setErrorToast(null), 4000);
     } finally {
       setIsProcessing(false);
     }
@@ -264,14 +283,16 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
       setIsProcessing(true);
       await onUpdateUserSalary(
         editingSalaryUser.user.id,
-        Number(editingSalaryUser.salary),
-        Number(editingSalaryUser.graceHours)
+        Number(editingSalaryUser.salary) || 0,
+        Number(editingSalaryUser.graceHours) || 0
       );
       setEditingSalaryUser(null);
       setSuccessToast(isAr ? 'تم تحديث الراتب وساعات السماحية بنجاح' : 'Salary and grace hours updated');
       setTimeout(() => setSuccessToast(null), 4000);
     } catch (err) {
-      alert(isAr ? 'تعذر تحديث بيانات الراتب' : 'Error updating salary');
+      console.error('Error updating salary:', err);
+      setErrorToast(isAr ? 'تعذر تحديث بيانات الراتب' : 'Error updating salary');
+      setTimeout(() => setErrorToast(null), 4000);
     } finally {
       setIsProcessing(false);
     }
@@ -279,31 +300,37 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
 
   // Export to Excel
   const handleExportPayrollExcel = () => {
-    const dataToExport = filteredSummaries.map((sum, index) => ({
-      [isAr ? 'م' : 'No']: index + 1,
-      [isAr ? 'اسم الموظف' : 'Employee Name']: sum.userName,
-      [isAr ? 'القسم' : 'Department']: sum.department,
-      [isAr ? 'البريد الإلكتروني' : 'Email']: sum.userEmail,
-      [isAr ? 'الشهر' : 'Month']: sum.month,
-      [isAr ? 'الراتب الأساسي' : 'Base Salary']: sum.baseSalary,
-      [isAr ? 'أجر الساعة' : 'Hourly Rate']: sum.hourlyRate,
-      [isAr ? 'مرات التأخير' : 'Late Count']: sum.totalLateOccurrences,
-      [isAr ? 'إجمالي التأخير (ساعة)' : 'Total Late (Hours)']: sum.totalLateHours,
-      [isAr ? 'سماحية التأخير الممنوحة (ساعة)' : 'Grace Quota (Hours)']: sum.allowedGraceHours,
-      [isAr ? 'المستهلك من السماحية (ساعة)' : 'Grace Used (Hours)']: Math.round((sum.usedGraceMinutes / 60) * 100) / 100,
-      [isAr ? 'المتبقي من السماحية (ساعة)' : 'Grace Remaining (Hours)']: sum.remainingGraceHours,
-      [isAr ? 'ساعات التأخير الزائدة الخاضعة للخصم' : 'Excess Deductible Hours']: sum.excessLateHours,
-      [isAr ? 'خصم التأخير من البصمة' : 'Late Deduction']: sum.lateDeductionAmount,
-      [isAr ? 'خصم الجزاءات والعقوبات' : 'Penalty Deductions']: sum.penaltyDeductionsAmount,
-      [isAr ? 'إجمالي الخصومات المعفاة/المرفوعة' : 'Waived Deductions']: sum.waivedDeductionsAmount,
-      [isAr ? 'صافي الخصومات المطبقة' : 'Total Net Deductions']: sum.totalNetDeductions,
-      [isAr ? 'صافي الراتب المستحق' : 'Net Payable Salary']: sum.netSalary,
-    }));
+    try {
+      const dataToExport = (filteredSummaries || []).map((sum, index) => ({
+        [isAr ? 'م' : 'No']: index + 1,
+        [isAr ? 'اسم الموظف' : 'Employee Name']: sum?.userName || '',
+        [isAr ? 'القسم' : 'Department']: sum?.department || '',
+        [isAr ? 'البريد الإلكتروني' : 'Email']: sum?.userEmail || '',
+        [isAr ? 'الشهر' : 'Month']: sum?.month || selectedMonth,
+        [isAr ? 'الراتب الأساسي' : 'Base Salary']: sum?.baseSalary || 0,
+        [isAr ? 'أجر الساعة' : 'Hourly Rate']: sum?.hourlyRate || 0,
+        [isAr ? 'مرات التأخير' : 'Late Count']: sum?.totalLateOccurrences || 0,
+        [isAr ? 'إجمالي التأخير (ساعة)' : 'Total Late (Hours)']: sum?.totalLateHours || 0,
+        [isAr ? 'سماحية التأخير الممنوحة (ساعة)' : 'Grace Quota (Hours)']: sum?.allowedGraceHours || 0,
+        [isAr ? 'المستهلك من السماحية (ساعة)' : 'Grace Used (Hours)']: Math.round((Number(sum?.usedGraceMinutes || 0) / 60) * 100) / 100,
+        [isAr ? 'المتبقي من السماحية (ساعة)' : 'Grace Remaining (Hours)']: sum?.remainingGraceHours || 0,
+        [isAr ? 'ساعات التأخير الزائدة الخاضعة للخصم' : 'Excess Deductible Hours']: sum?.excessLateHours || 0,
+        [isAr ? 'خصم التأخير من البصمة' : 'Late Deduction']: sum?.lateDeductionAmount || 0,
+        [isAr ? 'خصم الجزاءات والعقوبات' : 'Penalty Deductions']: sum?.penaltyDeductionsAmount || 0,
+        [isAr ? 'إجمالي الخصومات المعفاة/المرفوعة' : 'Waived Deductions']: sum?.waivedDeductionsAmount || 0,
+        [isAr ? 'صافي الخصومات المطبقة' : 'Total Net Deductions']: sum?.totalNetDeductions || 0,
+        [isAr ? 'صافي الراتب المستحق' : 'Net Payable Salary']: sum?.netSalary || 0,
+      }));
 
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, `Payroll-${selectedMonth}`);
-    XLSX.writeFile(wb, `Dawamy-Payroll-${selectedMonth}.xlsx`);
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, `Payroll-${selectedMonth}`);
+      XLSX.writeFile(wb, `Dawamy-Payroll-${selectedMonth}.xlsx`);
+    } catch (err) {
+      console.error('Error exporting Excel:', err);
+      setErrorToast(isAr ? 'تعذر تصدير ملف الإكسل' : 'Failed to export Excel');
+      setTimeout(() => setErrorToast(null), 4000);
+    }
   };
 
   return (
@@ -313,6 +340,13 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#2D3628] text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-in fade-in duration-200">
           <CheckCircle2 className="w-5 h-5 text-[#97A87A]" />
           <span className="text-sm font-semibold">{successToast}</span>
+        </div>
+      )}
+
+      {errorToast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#991B1B] text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-in fade-in duration-200">
+          <AlertTriangle className="w-5 h-5 text-[#FCA5A5]" />
+          <span className="text-sm font-semibold">{errorToast}</span>
         </div>
       )}
 
@@ -705,8 +739,8 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
                                           {rec.waivedBy ? `${rec.waivedBy}` : isAr ? 'معفى بقرار HR' : 'Waived by HR'}
                                         </span>
                                         <button
-                                          onClick={() => handleRestore('attendance', rec.id)}
-                                          className="text-[10px] text-rose-700 hover:underline flex items-center gap-1 font-bold"
+                                          onClick={() => setRestoreConfirmTarget({ type: 'attendance', id: rec.id })}
+                                          className="text-[10px] text-rose-700 hover:underline flex items-center gap-1 font-bold cursor-pointer"
                                         >
                                           <Undo2 className="w-3 h-3" />
                                           <span>{isAr ? 'إلغاء الإعفاء' : 'Restore'}</span>
@@ -849,8 +883,8 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
                                   <span className="text-[10px] text-[#65635E] italic">"{ded.waivedReason}"</span>
                                 )}
                                 <button
-                                  onClick={() => handleRestore('penalty', ded.id)}
-                                  className="text-[10px] text-rose-700 hover:underline flex items-center gap-1 font-bold mt-1"
+                                  onClick={() => setRestoreConfirmTarget({ type: 'penalty', id: ded.id })}
+                                  className="text-[10px] text-rose-700 hover:underline flex items-center gap-1 font-bold mt-1 cursor-pointer"
                                 >
                                   <Undo2 className="w-3 h-3" />
                                   <span>{isAr ? 'إعادة تطبيق الخصم' : 'Restore'}</span>
@@ -1065,6 +1099,52 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
       )}
 
       {/* ---------------------------------------------------- */}
+      {/* MODAL: RESTORE DEDUCTION CONFIRMATION                */}
+      {/* ---------------------------------------------------- */}
+      {restoreConfirmTarget && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 border border-[#E5E2D9] shadow-2xl space-y-4 text-right">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E5E2D9]">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-[#2D3628]">
+                  {isAr ? 'تأكيد إعادة تطبيق الخصم' : 'Confirm Restore Deduction'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setRestoreConfirmTarget(null)}
+                className="p-1 rounded-lg text-[#8C887B] hover:text-[#2D3628] hover:bg-[#FAF9F6] cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-[#65635E] leading-relaxed">
+              {isAr
+                ? 'هل أنت متأكد من رغبتك في إلغاء الإعفاء وإعادة تطبيق هذا الخصم المالي في مسير الرواتب؟'
+                : 'Are you sure you want to cancel the waiver and restore this deduction to the payroll?'}
+            </p>
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                onClick={() => setRestoreConfirmTarget(null)}
+                className="px-4 py-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#65635E] font-bold text-xs cursor-pointer"
+              >
+                {isAr ? 'تراجع' : 'Cancel'}
+              </button>
+              <button
+                onClick={handleConfirmRestore}
+                disabled={isProcessing}
+                className="px-5 py-2 rounded-xl bg-[#991B1B] hover:bg-[#7F1D1D] text-white font-bold text-xs shadow-md cursor-pointer disabled:opacity-50"
+              >
+                {isProcessing ? (isAr ? 'جاري التنفيذ...' : 'Processing...') : isAr ? 'تأكيد الإعادة' : 'Confirm Restore'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------- */}
       {/* MODAL: ADD PENALTY / DISCIPLINARY DEDUCTION          */}
       {/* ---------------------------------------------------- */}
       {showAddPenaltyModal && (
@@ -1239,8 +1319,8 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
                 />
                 <p className="text-[10px] text-[#8C887B] mt-1">
                   {isAr
-                    ? `معدل أجر الساعة المحسوب: ${(editingSalaryUser.salary / 240).toFixed(2)} ر.س/ساعة`
-                    : `Calculated hourly rate: ${(editingSalaryUser.salary / 240).toFixed(2)} SAR/h`}
+                    ? `معدل أجر الساعة المحسوب: ${(Number(editingSalaryUser?.salary || 0) / 240).toFixed(2)} ر.س/ساعة`
+                    : `Calculated hourly rate: ${(Number(editingSalaryUser?.salary || 0) / 240).toFixed(2)} SAR/h`}
                 </p>
               </div>
 
@@ -1386,15 +1466,21 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
             {/* Print & Close */}
             <div className="flex items-center justify-end gap-2.5 pt-2">
               <button
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#2D3628] font-bold text-xs flex items-center gap-1.5 border border-[#E5E2D9]"
+                onClick={() => {
+                  try {
+                    window.print();
+                  } catch (e) {
+                    console.warn('Printing not available:', e);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#2D3628] font-bold text-xs flex items-center gap-1.5 border border-[#E5E2D9] cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 <span>{isAr ? 'طباعة القسيمة' : 'Print'}</span>
               </button>
               <button
                 onClick={() => setViewingPayslipUser(null)}
-                className="px-5 py-2 rounded-xl bg-[#5E7153] text-white font-bold text-xs"
+                className="px-5 py-2 rounded-xl bg-[#5E7153] text-white font-bold text-xs cursor-pointer"
               >
                 {isAr ? 'إغلاق' : 'Close'}
               </button>

@@ -24,25 +24,34 @@ import {
   ShieldCheck,
   HelpCircle,
   Play,
+  Sliders,
+  FileSpreadsheet,
+  TrendingDown,
 } from 'lucide-react';
 import {
   UserProfile,
   AttendanceRecord,
   BiometricDeviceConfig,
   BiometricVerifyMethod,
+  CompanyWorkSchedule,
 } from '../types';
+import { HrWorkHoursReportView } from './HrWorkHoursReportView';
+import { calculateAttendanceMetrics, formatMinutesHumanReadable } from '../utils/workScheduleUtils';
 
 interface BiometricAttendanceViewProps {
   currentUser: UserProfile;
   allUsers: UserProfile[];
   attendanceRecords: AttendanceRecord[];
   biometricDevices: BiometricDeviceConfig[];
+  companySchedule: CompanyWorkSchedule;
+  onOpenScheduleModal: () => void;
   onRecordPunch: (punch: {
     userId: string;
     type: 'check_in' | 'check_out';
     deviceId?: string;
     verifyMethod?: BiometricVerifyMethod;
     customTime?: string;
+    customDate?: string;
   }) => Promise<void>;
   onAddDevice?: (device: BiometricDeviceConfig) => Promise<void>;
   onSyncDevice?: (deviceId: string) => Promise<void>;
@@ -54,6 +63,8 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
   allUsers,
   attendanceRecords,
   biometricDevices,
+  companySchedule,
+  onOpenScheduleModal,
   onRecordPunch,
   onAddDevice,
   onSyncDevice,
@@ -66,7 +77,7 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isPunching, setIsPunching] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'records' | 'devices' | 'simulator'>('records');
+  const [activeSubTab, setActiveSubTab] = useState<'records' | 'hr_schedule_report' | 'devices' | 'simulator'>('records');
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
   const [devicePingStatus, setDevicePingStatus] = useState<Record<string, { latency: number; time: string }>>({});
@@ -98,9 +109,9 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
     try {
       setIsPunching(true);
       await onRecordPunch({
-        userId: currentUser.id,
+        userId: currentUser?.id || '',
         type,
-        deviceId: biometricDevices[0]?.id,
+        deviceId: biometricDevices?.[0]?.id || 'dev-default',
         verifyMethod: 'fingerprint',
       });
     } catch (err) {
@@ -192,50 +203,63 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
 
   // Export Attendance Log to Excel
   const handleExportAttendanceExcel = () => {
-    const exportData = filteredRecords.map((r, idx) => ({
-      index: idx + 1,
-      enroll_id: r.biometricEnrollId || '-',
-      employee_name: r.userName,
-      department: r.department,
-      date: r.date,
-      check_in_time: r.checkInTime || '-',
-      check_out_time: r.checkOutTime || '-',
-      working_hours: r.totalWorkingHours ? `${r.totalWorkingHours.toFixed(1)} hrs` : '-',
-      status: r.status,
-      late_minutes: r.lateMinutes ? `${r.lateMinutes} min` : 0,
-      verify_method: r.verifyMethod || 'fingerprint',
-      device_name: r.deviceName || 'HQ Terminal',
-      device_location: r.deviceLocation || 'Main Office',
-    }));
+    try {
+      const exportData = (filteredRecords || []).map((r, idx) => ({
+        index: idx + 1,
+        enroll_id: r?.biometricEnrollId || '-',
+        employee_name: r?.userName || '-',
+        department: r?.department || '-',
+        date: r?.date || '-',
+        check_in_time: r?.checkInTime || '-',
+        check_out_time: r?.checkOutTime || '-',
+        working_hours: typeof r?.totalWorkingHours === 'number' && !isNaN(r.totalWorkingHours)
+          ? `${r.totalWorkingHours.toFixed(1)} hrs`
+          : '-',
+        status: r?.status || '-',
+        late_minutes: r?.lateMinutes ? `${r.lateMinutes} min` : 0,
+        verify_method: r?.verifyMethod || 'fingerprint',
+        device_name: r?.deviceName || 'HQ Terminal',
+        device_location: r?.deviceLocation || 'Main Office',
+      }));
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    worksheet['!cols'] = [
-      { wch: 6 },
-      { wch: 12 },
-      { wch: 22 },
-      { wch: 20 },
-      { wch: 14 },
-      { wch: 16 },
-      { wch: 16 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 16 },
-      { wch: 26 },
-      { wch: 22 },
-    ];
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      worksheet['!cols'] = [
+        { wch: 6 },
+        { wch: 12 },
+        { wch: 22 },
+        { wch: 20 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 26 },
+        { wch: 22 },
+      ];
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance_Log');
-    XLSX.writeFile(workbook, `Dawamy_Biometric_Attendance_${todayStr}.xlsx`);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance_Log');
+      XLSX.writeFile(workbook, `Dawamy_Biometric_Attendance_${todayStr}.xlsx`);
+    } catch (err) {
+      console.error('Error exporting attendance Excel:', err);
+    }
   };
 
   // Filter records
-  const filteredRecords = attendanceRecords.filter((rec) => {
+  const filteredRecords = (attendanceRecords || []).filter((rec) => {
+    if (!rec) return false;
+    const term = (searchTerm || '').toLowerCase().trim();
+    const userName = (rec.userName || '').toLowerCase();
+    const enrollId = rec.biometricEnrollId || '';
+    const userEmail = (rec.userEmail || '').toLowerCase();
+
     const matchesSearch =
-      rec.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (rec.biometricEnrollId && rec.biometricEnrollId.includes(searchTerm)) ||
-      rec.userEmail.toLowerCase().includes(searchTerm.toLowerCase());
+      !term ||
+      userName.includes(term) ||
+      enrollId.includes(term) ||
+      userEmail.includes(term);
 
     const matchesDept = departmentFilter === 'all' || rec.department === departmentFilter;
     const matchesStatus = statusFilter === 'all' || rec.status === statusFilter;
@@ -244,7 +268,7 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
   });
 
   // Unique departments for filter
-  const departments = Array.from(new Set(allUsers.map((u) => u.department)));
+  const departments = Array.from(new Set((allUsers || []).map((u) => u?.department).filter(Boolean)));
 
   return (
     <div className="space-y-6 pb-12">
@@ -286,7 +310,7 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
                 </strong>
               </span>
 
-              {userTodayRecord?.totalWorkingHours && (
+              {userTodayRecord && typeof userTodayRecord.totalWorkingHours === 'number' && !isNaN(userTodayRecord.totalWorkingHours) && (
                 <span className="px-2.5 py-0.5 rounded-md bg-[#5E7153]/60 border border-[#7D946F]/30 text-[#E9EDD9]">
                   {isAr
                     ? `إجمالي الساعات: ${userTodayRecord.totalWorkingHours.toFixed(1)} ساعة`
@@ -371,6 +395,23 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
 
           <button
             type="button"
+            id="btn-tab-hr-report"
+            onClick={() => setActiveSubTab('hr_schedule_report')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              activeSubTab === 'hr_schedule_report'
+                ? 'bg-[#5E7153] text-white shadow-sm'
+                : 'bg-white text-[#65635E] hover:bg-[#FAF9F6] border border-[#E5E2D9]'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>{isAr ? 'كشف ساعات وتأخيرات الدوام (HR)' : 'HR Shift & Shortage Audit'}</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-900 font-extrabold">
+              {isAr ? 'كشف شامل وفردي' : 'Audit'}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveSubTab('devices')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
               activeSubTab === 'devices'
@@ -399,15 +440,26 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
           </button>
         </div>
 
-        {/* Action: Export to Excel */}
-        <button
-          type="button"
-          onClick={handleExportAttendanceExcel}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-[#FAF9F6] border border-[#D9E0D2] text-xs font-bold text-[#2D3628] transition-colors shadow-xs"
-        >
-          <Download className="w-4 h-4 text-[#5E7153]" />
-          <span>{isAr ? 'تصدير السجل (.xlsx)' : 'Export Attendance (.xlsx)'}</span>
-        </button>
+        {/* Actions: Configure Policy & Export to Excel */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenScheduleModal}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] border border-[#D9E0D2] text-xs font-bold text-[#2D3628] transition-colors"
+          >
+            <Sliders className="w-4 h-4 text-[#5E7153]" />
+            <span>{isAr ? 'إعدادات ساعات الدوام' : 'Shift Policy'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportAttendanceExcel}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-[#FAF9F6] border border-[#D9E0D2] text-xs font-bold text-[#2D3628] transition-colors shadow-xs"
+          >
+            <Download className="w-4 h-4 text-[#5E7153]" />
+            <span>{isAr ? 'تصدير السجل (.xlsx)' : 'Export Attendance (.xlsx)'}</span>
+          </button>
+        </div>
       </div>
 
       {/* ----------------------------------------------------
@@ -468,9 +520,10 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
                 <tr>
                   <th className="py-3.5 px-4 font-bold">{isAr ? 'الموظف' : 'Employee'}</th>
                   <th className="py-3.5 px-3 font-bold">{isAr ? 'رقم البصمة' : 'Enroll ID'}</th>
-                  <th className="py-3.5 px-3 font-bold">{isAr ? 'بصمة الدخول' : 'Check-In'}</th>
-                  <th className="py-3.5 px-3 font-bold">{isAr ? 'بصمة الخروج' : 'Check-Out'}</th>
+                  <th className="py-3.5 px-3 font-bold">{isAr ? 'الدخول والتأخير' : 'Check-In & Late'}</th>
+                  <th className="py-3.5 px-3 font-bold">{isAr ? 'الخروج والانصراف' : 'Check-Out & Early'}</th>
                   <th className="py-3.5 px-3 font-bold">{isAr ? 'ساعات العمل' : 'Hours'}</th>
+                  <th className="py-3.5 px-3 font-bold">{isAr ? 'العجز اليومي' : 'Daily Deficit'}</th>
                   <th className="py-3.5 px-3 font-bold">{isAr ? 'طريقة التحقق' : 'Method'}</th>
                   <th className="py-3.5 px-3 font-bold">{isAr ? 'الجهاز والموقع' : 'Device'}</th>
                   <th className="py-3.5 px-4 font-bold">{isAr ? 'الحالة' : 'Status'}</th>
@@ -479,12 +532,20 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
               <tbody className="divide-y divide-[#E5E2D9]">
                 {filteredRecords.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-[#8C8984]">
+                    <td colSpan={9} className="py-12 text-center text-[#8C8984]">
                       {isAr ? 'لا توجد سجلات مطابقة لمعايير البحث' : 'No attendance records match your criteria'}
                     </td>
                   </tr>
                 ) : (
                   filteredRecords.map((rec) => {
+                    const metrics = calculateAttendanceMetrics({
+                      checkInTime: rec.checkInTime,
+                      checkOutTime: rec.checkOutTime,
+                      date: rec.date,
+                      schedule: companySchedule,
+                      existingLateWaived: !!rec.isLateDeductionWaived,
+                    });
+
                     return (
                       <tr key={rec.id} className="hover:bg-[#FAF9F6] transition-colors">
                         {/* Employee info */}
@@ -512,25 +573,59 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
                           <div className="font-mono font-bold text-[#2D3628]">
                             {rec.checkInTime || '-'}
                           </div>
-                          {rec.lateMinutes && rec.lateMinutes > 0 ? (
-                            <div className="text-[10px] text-[#9E3B30] font-medium">
-                              {isAr ? `تأخر ${rec.lateMinutes} دقيقة` : `Late ${rec.lateMinutes}m`}
+                          {metrics.lateMinutes > 0 ? (
+                            <div className="text-[10px] text-amber-800 font-semibold mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-amber-50 border border-amber-200">
+                              {isAr ? `تأخر ${metrics.lateMinutes} د` : `Late ${metrics.lateMinutes}m`}
+                            </div>
+                          ) : rec.checkInTime && !metrics.isWeekend ? (
+                            <div className="text-[10px] text-[#5E7153] font-medium mt-0.5">
+                              {isAr ? 'في الموعد' : 'On Time'}
                             </div>
                           ) : null}
                         </td>
 
                         {/* Check-Out */}
-                        <td className="py-3 px-3 font-mono text-[#65635E]">
-                          {rec.checkOutTime || (
-                            <span className="text-[#8C8984] italic">
-                              {isAr ? 'لم يسجل بعد' : 'Not recorded'}
-                            </span>
-                          )}
+                        <td className="py-3 px-3">
+                          <div className="font-mono font-bold text-[#65635E]">
+                            {rec.checkOutTime || (
+                              <span className="text-[#8C8984] italic font-normal">
+                                {isAr ? 'لم يسجل بعد' : 'Not recorded'}
+                              </span>
+                            )}
+                          </div>
+                          {metrics.earlyLeaveMinutes > 0 ? (
+                            <div className="text-[10px] text-orange-800 font-semibold mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-orange-50 border border-orange-200">
+                              {isAr ? `انصراف مبكر ${metrics.earlyLeaveMinutes} د` : `Early -${metrics.earlyLeaveMinutes}m`}
+                            </div>
+                          ) : null}
                         </td>
 
                         {/* Hours */}
                         <td className="py-3 px-3 font-mono font-bold text-[#2D3628]">
-                          {rec.totalWorkingHours ? `${rec.totalWorkingHours.toFixed(1)} h` : '-'}
+                          {metrics.totalWorkingHours > 0
+                            ? `${metrics.totalWorkingHours} h`
+                            : '-'}
+                        </td>
+
+                        {/* Shortage / Deficit */}
+                        <td className="py-3 px-3">
+                          {metrics.dailyShortageMinutes > 0 ? (
+                            <div className="inline-flex flex-col">
+                              <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-800 font-bold text-[11px]">
+                                {metrics.dailyShortageHours} {isAr ? 'ساعة' : 'h'}
+                              </span>
+                              <span className="text-[10px] text-rose-700">
+                                ({metrics.dailyShortageMinutes} {isAr ? 'دقيقة' : 'm'})
+                              </span>
+                            </div>
+                          ) : metrics.isWeekend ? (
+                            <span className="text-[#8C8984] text-[11px]">-</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[#5E7153] text-[11px] font-semibold">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>{isAr ? 'مكتمل' : 'Full'}</span>
+                            </span>
+                          )}
                         </td>
 
                         {/* Verify Method */}
@@ -556,32 +651,40 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
 
                         {/* Device & Location */}
                         <td className="py-3 px-3">
-                          <div className="text-xs text-[#2D3628] font-medium truncate max-w-[160px]">
+                          <div className="text-xs text-[#2D3628] font-medium truncate max-w-[150px]">
                             {rec.deviceName || (isAr ? 'المقر الرئيسي' : 'HQ Terminal')}
                           </div>
-                          <div className="text-[10px] text-[#8C8984] truncate max-w-[160px]">
+                          <div className="text-[10px] text-[#8C8984] truncate max-w-[150px]">
                             {rec.deviceLocation || (isAr ? 'بوابة الدخول' : 'Entrance')}
                           </div>
                         </td>
 
                         {/* Status */}
                         <td className="py-3 px-4">
-                          {rec.status === 'present' && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#E9EDD9] text-[#2D3628]">
-                              <CheckCircle2 className="w-3 h-3 text-[#5E7153]" />
-                              {isAr ? 'حاضر في الموعد' : 'On Time'}
-                            </span>
-                          )}
-                          {rec.status === 'late' && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FFF4E5] text-[#B25E00]">
-                              <AlertTriangle className="w-3 h-3 text-[#B25E00]" />
-                              {isAr ? 'متأخر' : 'Late'}
-                            </span>
-                          )}
-                          {rec.status === 'wfh' && (
+                          {rec.status === 'wfh' ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#E8F0FE] text-[#1E3A8A]">
                               <Laptop className="w-3 h-3 text-[#2563EB]" />
                               {isAr ? 'عمل عن بُعد' : 'WFH'}
+                            </span>
+                          ) : metrics.lateMinutes > 0 && metrics.earlyLeaveMinutes > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                              <AlertTriangle className="w-3 h-3 text-rose-600" />
+                              {isAr ? 'تأخير وانصراف' : 'Late & Early'}
+                            </span>
+                          ) : metrics.lateMinutes > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FFF4E5] text-[#B25E00]">
+                              <AlertTriangle className="w-3 h-3 text-[#B25E00]" />
+                              {isAr ? 'تأخير دخول' : 'Late Check-in'}
+                            </span>
+                          ) : metrics.earlyLeaveMinutes > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-800 border border-orange-200">
+                              <TrendingDown className="w-3 h-3 text-orange-600" />
+                              {isAr ? 'انصراف مبكر' : 'Early Leave'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#E9EDD9] text-[#2D3628]">
+                              <CheckCircle2 className="w-3 h-3 text-[#5E7153]" />
+                              {isAr ? 'حاضر في الموعد' : 'On Time'}
                             </span>
                           )}
                         </td>
@@ -592,6 +695,23 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* ----------------------------------------------------
+          TAB: HR WORK SCHEDULE & SHORTAGE AUDIT REPORT
+      ---------------------------------------------------- */}
+      {activeSubTab === 'hr_schedule_report' && (
+        <div className="animate-in fade-in duration-200">
+          <HrWorkHoursReportView
+            currentUser={currentUser}
+            allUsers={allUsers}
+            attendanceRecords={attendanceRecords}
+            companySchedule={companySchedule}
+            onOpenScheduleModal={onOpenScheduleModal}
+            onRecordPunch={onRecordPunch}
+            lang={lang}
+          />
         </div>
       )}
 

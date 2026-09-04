@@ -9,6 +9,10 @@ import {
   ShieldCheck,
   Languages,
   X,
+  CheckCheck,
+  Clock,
+  AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { UserProfile, UserRole, NotificationItem } from '../types';
 
@@ -19,6 +23,8 @@ interface HeaderProps {
   onToggleCurrentUserRole?: () => void;
   notifications: NotificationItem[];
   onMarkNotificationAsRead: (id: string) => void;
+  onMarkAllNotificationsAsRead?: () => void;
+  onNotificationClick?: (notif: NotificationItem) => void;
   onClearNotifications: () => void;
   lang: 'ar' | 'en';
   onToggleLang: () => void;
@@ -29,6 +35,56 @@ interface HeaderProps {
   firebaseAuthUser?: { email: string | null; displayName: string | null; photoURL?: string | null; uid?: string } | null;
 }
 
+function safeFormatNotifTimestamp(timestamp: unknown, isAr: boolean): string {
+  if (!timestamp) return isAr ? 'الآن' : 'Just now';
+  if (typeof timestamp === 'string') return timestamp;
+  if (typeof timestamp === 'number') {
+    try {
+      const d = new Date(timestamp);
+      return d.toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return isAr ? 'الآن' : 'Just now';
+    }
+  }
+  if (typeof timestamp === 'object' && timestamp !== null) {
+    const obj = timestamp as { seconds?: number; toDate?: () => Date };
+    if (typeof obj.toDate === 'function') {
+      try {
+        const d = obj.toDate();
+        return d.toLocaleDateString(isAr ? 'ar-SA' : 'en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          month: 'short',
+          day: 'numeric',
+        });
+      } catch {
+        return isAr ? 'الآن' : 'Just now';
+      }
+    }
+    if (typeof obj.seconds === 'number') {
+      try {
+        const d = new Date(obj.seconds * 1000);
+        return d.toLocaleDateString(isAr ? 'ar-SA' : 'en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          month: 'short',
+          day: 'numeric',
+        });
+      } catch {
+        return isAr ? 'الآن' : 'Just now';
+      }
+    }
+  }
+  return isAr ? 'الآن' : 'Just now';
+}
+
+function safeText(val: unknown, fallback: string = ''): string {
+  if (typeof val === 'string') return val;
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  return fallback;
+}
+
 export const Header: React.FC<HeaderProps> = ({
   currentUser,
   allUsers,
@@ -36,6 +92,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleCurrentUserRole,
   notifications,
   onMarkNotificationAsRead,
+  onMarkAllNotificationsAsRead,
+  onNotificationClick,
   onClearNotifications,
   lang,
   onToggleLang,
@@ -46,6 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
   firebaseAuthUser,
 }) => {
   const [showNotifs, setShowNotifs] = useState(false);
+  const [notifFilter, setNotifFilter] = useState<'all' | 'unread'>('all');
   const [currentTime, setCurrentTime] = useState('');
 
   useEffect(() => {
@@ -68,8 +127,41 @@ export const Header: React.FC<HeaderProps> = ({
     return () => clearInterval(interval);
   }, [lang]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const safeNotifications = Array.isArray(notifications)
+    ? notifications.filter((n): n is NotificationItem => Boolean(n && typeof n === 'object' && n.id))
+    : [];
+  const unreadCount = safeNotifications.filter((n) => !n.read).length;
+  const filteredNotifications = notifFilter === 'unread'
+    ? safeNotifications.filter((n) => !n.read)
+    : safeNotifications;
   const isAr = lang === 'ar';
+
+  const handleNotificationClick = (notif: NotificationItem) => {
+    try {
+      if (!notif.read) {
+        onMarkNotificationAsRead(notif.id);
+      }
+      if (onNotificationClick) {
+        onNotificationClick(notif);
+        setShowNotifs(false);
+      }
+    } catch (e) {
+      console.warn('Error on notification click:', e);
+    }
+  };
+
+  const getNotificationIcon = (type?: string) => {
+    switch (type) {
+      case 'approval':
+        return <CheckCircle2 className="w-4 h-4 text-[#5E7153] shrink-0 mt-0.5" />;
+      case 'rejection':
+        return <AlertCircle className="w-4 h-4 text-[#B85C4F] shrink-0 mt-0.5" />;
+      case 'request':
+        return <Clock className="w-4 h-4 text-[#C98A4B] shrink-0 mt-0.5" />;
+      default:
+        return <Bell className="w-4 h-4 text-[#5E7153] shrink-0 mt-0.5" />;
+    }
+  };
 
   return (
     <header className="w-full bg-[#FAF9F6]/95 backdrop-blur-md">
@@ -143,74 +235,154 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="btn-notifications-trigger"
                 onClick={() => setShowNotifs(!showNotifs)}
-                className="relative p-2 rounded-lg bg-[#EFECE4] hover:bg-[#E5E2D9] text-[#43423E] hover:text-[#2D3628] border border-[#E5E2D9] transition"
+                className="relative p-2 rounded-xl bg-[#EFECE4] hover:bg-[#E5E2D9] text-[#43423E] hover:text-[#2D3628] border border-[#E5E2D9] transition cursor-pointer"
+                title={isAr ? 'الإشعارات والتنبيهات' : 'Notifications'}
               >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#E5AA70] text-[#2D3628] font-bold text-[10px] rounded-full flex items-center justify-center animate-bounce">
-                    {unreadCount}
+                  <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-[#B85C4F] text-white font-bold text-[10px] rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                    {unreadCount > 9 ? '+9' : unreadCount}
                   </span>
                 )}
               </button>
 
               {/* Notification Popup Dropdown */}
               {showNotifs && (
-                <div className={`absolute ${isAr ? 'left-0' : 'right-0'} mt-2 w-80 sm:w-96 bg-[#FAF9F6] border border-[#E5E2D9] rounded-2xl shadow-2xl p-4 z-50 ${isAr ? 'text-right' : 'text-left'} animate-in fade-in slide-in-from-top-2 duration-150`}>
+                <div 
+                  id="notifications-dropdown-panel"
+                  className={`absolute ${isAr ? 'left-0' : 'right-0'} mt-2 w-84 sm:w-96 bg-[#FAF9F6] border border-[#E5E2D9] rounded-2xl shadow-2xl p-4 z-50 ${isAr ? 'text-right' : 'text-left'} animate-in fade-in slide-in-from-top-2 duration-150`}
+                >
                   <div className="flex items-center justify-between pb-3 border-b border-[#E5E2D9]">
                     <div className="flex items-center gap-2">
-                      <Bell className="w-4 h-4 text-[#5E7153]" />
-                      <span className="font-semibold text-sm text-[#2D3628]">
+                      <div className="p-1 rounded-lg bg-[#E9EDD9] text-[#5E7153]">
+                        <Bell className="w-4 h-4" />
+                      </div>
+                      <span className="font-bold text-sm text-[#2D3628]">
                         {isAr ? 'مركز الإشعارات والتنبيهات' : 'Notifications Center'}
                       </span>
                       {unreadCount > 0 && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#E9EDD9] text-[#2D3628] border border-[#D9E0D2]">
-                          {unreadCount} {isAr ? 'جديد' : 'new'}
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#B85C4F]/10 text-[#B85C4F] border border-[#B85C4F]/20">
+                          {unreadCount} {isAr ? 'غير مقروء' : 'unread'}
                         </span>
                       )}
                     </div>
                     <button
                       onClick={() => setShowNotifs(false)}
-                      className="text-[#65635E] hover:text-[#2D3628] p-1"
+                      className="text-[#65635E] hover:text-[#2D3628] p-1 rounded-lg hover:bg-[#EFECE4] transition"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
 
-                  <div className="divide-y divide-[#E5E2D9] max-h-72 overflow-y-auto my-2">
-                    {notifications.length === 0 ? (
-                      <p className="text-center py-6 text-xs text-[#65635E]">
-                        {isAr ? 'لا توجد إشعارات جديدة حالياً' : 'No notifications yet'}
-                      </p>
-                    ) : (
-                      notifications.map((notif) => (
-                        <div
-                          key={notif.id}
-                          onClick={() => onMarkNotificationAsRead(notif.id)}
-                          className={`p-3 rounded-xl transition cursor-pointer hover:bg-[#EFECE4] ${
-                            !notif.read ? 'bg-[#E9EDD9]/40 border border-[#D9E0D2]' : ''
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <h4 className="text-xs font-semibold text-[#2D3628]">
-                              {isAr ? notif.title : (notif.titleEn || notif.title)}
-                            </h4>
-                            <span className="text-[10px] text-[#65635E] whitespace-nowrap">
-                              {notif.timestamp}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-[#5A5852] mt-1 leading-relaxed">
-                            {isAr ? notif.message : (notif.messageEn || notif.message)}
-                          </p>
+                  {/* Filter Sub-Tabs */}
+                  <div className="flex items-center gap-1.5 my-2.5 p-1 bg-[#EFECE4] rounded-xl border border-[#E5E2D9] text-xs font-semibold">
+                    <button
+                      onClick={() => setNotifFilter('all')}
+                      className={`flex-1 py-1 px-2 rounded-lg transition text-center cursor-pointer ${
+                        notifFilter === 'all'
+                          ? 'bg-white text-[#2D3628] shadow-xs'
+                          : 'text-[#65635E] hover:text-[#2D3628]'
+                      }`}
+                    >
+                      {isAr ? 'الكل' : 'All'} ({safeNotifications.length})
+                    </button>
+                    <button
+                      onClick={() => setNotifFilter('unread')}
+                      className={`flex-1 py-1 px-2 rounded-lg transition text-center cursor-pointer ${
+                        notifFilter === 'unread'
+                          ? 'bg-white text-[#2D3628] shadow-xs'
+                          : 'text-[#65635E] hover:text-[#2D3628]'
+                      }`}
+                    >
+                      {isAr ? 'غير المقروءة' : 'Unread'} ({unreadCount})
+                    </button>
+                  </div>
+
+                  <div className="divide-y divide-[#E5E2D9] max-h-80 overflow-y-auto my-1 pr-0.5">
+                    {filteredNotifications.length === 0 ? (
+                      <div className="py-8 text-center space-y-2">
+                        <div className="w-10 h-10 rounded-full bg-[#EFECE4] flex items-center justify-center mx-auto text-[#65635E]">
+                          <Bell className="w-5 h-5" />
                         </div>
-                      ))
+                        <p className="text-xs text-[#65635E] font-medium">
+                          {notifFilter === 'unread'
+                            ? (isAr ? 'لا توجد إشعارات غير مقروءة' : 'No unread notifications')
+                            : (isAr ? 'لا توجد إشعارات حالياً' : 'No notifications yet')}
+                        </p>
+                      </div>
+                    ) : (
+                      filteredNotifications.map((notif) => {
+                        const titleText = safeText(isAr ? notif.title : (notif.titleEn || notif.title), isAr ? 'إشعار' : 'Notification');
+                        const messageText = safeText(isAr ? notif.message : (notif.messageEn || notif.message));
+                        const timeStr = safeFormatNotifTimestamp(notif.timestamp, isAr);
+
+                        return (
+                          <div
+                            key={notif.id}
+                            onClick={() => handleNotificationClick(notif)}
+                            className={`p-3 rounded-xl transition cursor-pointer hover:bg-[#EFECE4] group my-1 ${
+                              !notif.read ? 'bg-[#E9EDD9]/45 border border-[#D9E0D2]' : 'bg-transparent'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2.5">
+                              {getNotificationIcon(notif.type)}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <h4 className="text-xs font-bold text-[#2D3628] truncate">
+                                    {titleText}
+                                  </h4>
+                                  <span className="text-[10px] text-[#86837C] whitespace-nowrap shrink-0">
+                                    {timeStr}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-[#5A5852] mt-1 leading-relaxed line-clamp-2">
+                                  {messageText}
+                                </p>
+                                {notif.requestId && (
+                                  <div className="mt-1.5 flex items-center gap-1.5">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-md bg-white border border-[#D9E0D2] text-[#5E7153]">
+                                      <span>#{notif.requestId}</span>
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
 
-                  {notifications.length > 0 && (
-                    <div className="pt-2 border-t border-[#E5E2D9] flex justify-end">
+                  {safeNotifications.length > 0 && (
+                    <div className="pt-2.5 mt-1 border-t border-[#E5E2D9] flex items-center justify-between text-xs">
+                      {unreadCount > 0 && onMarkAllNotificationsAsRead ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              onMarkAllNotificationsAsRead();
+                            } catch (e) {
+                              console.warn(e);
+                            }
+                          }}
+                          className="flex items-center gap-1 text-[#5E7153] hover:text-[#4A5A41] transition font-semibold cursor-pointer"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>{isAr ? 'تحديد الكل كمقروء' : 'Mark all read'}</span>
+                        </button>
+                      ) : <span />}
+
                       <button
-                        onClick={onClearNotifications}
-                        className="text-xs text-[#5E7153] hover:text-[#4B5B42] transition font-medium"
+                        type="button"
+                        onClick={() => {
+                          try {
+                            onClearNotifications();
+                          } catch (e) {
+                            console.warn(e);
+                          }
+                        }}
+                        className="text-[#86837C] hover:text-[#B85C4F] transition font-medium cursor-pointer"
                       >
                         {isAr ? 'مسح الكل' : 'Clear all'}
                       </button>

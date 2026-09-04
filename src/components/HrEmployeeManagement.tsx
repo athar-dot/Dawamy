@@ -135,17 +135,17 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
       // Role filter
       if (roleFilter !== 'all' && u.role !== roleFilter) return false;
       // Department filter
-      if (departmentFilter !== 'all' && !u.department.includes(departmentFilter) && !u.departmentEn?.includes(departmentFilter)) {
+      if (departmentFilter !== 'all' && !(u.department || '').includes(departmentFilter) && !(u.departmentEn || '').includes(departmentFilter)) {
         return false;
       }
       // Search query
       if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesName = u.name.toLowerCase().includes(query) || u.nameEn?.toLowerCase().includes(query);
-        const matchesEmail = u.email?.toLowerCase().includes(query);
-        const matchesTitle = u.title?.toLowerCase().includes(query) || u.titleEn?.toLowerCase().includes(query);
-        const matchesManager = u.managerName?.toLowerCase().includes(query);
-        const matchesDept = u.department?.toLowerCase().includes(query);
+        const query = searchQuery.toLowerCase().trim();
+        const matchesName = (u.name || '').toLowerCase().includes(query) || (u.nameEn || '').toLowerCase().includes(query);
+        const matchesEmail = (u.email || '').toLowerCase().includes(query);
+        const matchesTitle = (u.title || '').toLowerCase().includes(query) || (u.titleEn || '').toLowerCase().includes(query);
+        const matchesManager = (u.managerName || '').toLowerCase().includes(query);
+        const matchesDept = (u.department || '').toLowerCase().includes(query);
         return matchesName || matchesEmail || matchesTitle || matchesManager || matchesDept;
       }
       return true;

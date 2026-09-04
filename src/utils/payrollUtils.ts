@@ -12,24 +12,28 @@ import {
  */
 export function calculateMonthlyEmployeeLateSummary(
   employee: UserProfile,
-  attendanceRecords: AttendanceRecord[],
-  deductions: SalaryDeduction[],
+  attendanceRecords: AttendanceRecord[] = [],
+  deductions: SalaryDeduction[] = [],
   selectedMonth: string = '2026-09' // YYYY-MM
 ): MonthlyEmployeeLateSummary {
+  const safeRecords = Array.isArray(attendanceRecords) ? attendanceRecords : [];
+  const safeDeductions = Array.isArray(deductions) ? deductions : [];
+  const empId = employee?.id || '';
+
   // 1. Filter attendance records for this employee in the chosen month
-  const userMonthRecords = attendanceRecords.filter(
-    (r) => r.userId === employee.id && r.date && r.date.startsWith(selectedMonth)
+  const userMonthRecords = safeRecords.filter(
+    (r) => r?.userId === empId && r?.date && typeof r.date === 'string' && r.date.startsWith(selectedMonth)
   );
 
-  const lateRecords = userMonthRecords.filter((r) => (r.lateMinutes || 0) > 0);
-  const activeLateRecords = lateRecords.filter((r) => !r.isLateDeductionWaived);
+  const lateRecords = userMonthRecords.filter((r) => Number(r?.lateMinutes || 0) > 0);
+  const activeLateRecords = lateRecords.filter((r) => !r?.isLateDeductionWaived);
 
   // 2. Sum up un-waived late minutes
-  const totalLateMinutes = activeLateRecords.reduce((sum, r) => sum + (r.lateMinutes || 0), 0);
+  const totalLateMinutes = activeLateRecords.reduce((sum, r) => sum + Number(r?.lateMinutes || 0), 0);
   const totalLateHours = Math.round((totalLateMinutes / 60) * 100) / 100;
 
   // 3. Grace quota (default 4.0 hours / 240 minutes)
-  const allowedGraceHours = employee.graceLateHoursMonthly !== undefined ? employee.graceLateHoursMonthly : 4.0;
+  const allowedGraceHours = employee?.graceLateHoursMonthly !== undefined ? Number(employee.graceLateHoursMonthly) : 4.0;
   const allowedGraceMinutes = Math.round(allowedGraceHours * 60);
 
   const usedGraceMinutes = Math.min(totalLateMinutes, allowedGraceMinutes);
@@ -41,30 +45,30 @@ export function calculateMonthlyEmployeeLateSummary(
   const excessLateHours = Math.round((excessLateMinutes / 60) * 100) / 100;
 
   // 5. Salary & hourly rate: Standard calculation (Salary / 30 days / 8 hours = hourly rate)
-  const baseSalary = employee.salary || 14000;
-  const salaryCurrency = employee.salaryCurrency || 'ر.س';
+  const baseSalary = Number(employee?.salary) || 14000;
+  const salaryCurrency = employee?.salaryCurrency || 'ر.س';
   const hourlyRate = Math.round((baseSalary / (30 * 8)) * 100) / 100; // Salary / 240h
 
   const lateDeductionAmount = Math.round(excessLateHours * hourlyRate * 100) / 100;
 
   // 6. Disciplinary / Penalty deductions
-  const userMonthDeductions = deductions.filter(
-    (d) => d.userId === employee.id && d.month === selectedMonth
+  const userMonthDeductions = safeDeductions.filter(
+    (d) => d?.userId === empId && d?.month === selectedMonth
   );
 
   const appliedPenalties = userMonthDeductions.filter(
-    (d) => d.type !== 'late_arrival' && d.status === 'applied'
+    (d) => d?.type !== 'late_arrival' && d?.status === 'applied'
   );
   const penaltyDeductionsAmount = Math.round(
-    appliedPenalties.reduce((sum, d) => sum + d.amount, 0) * 100
+    appliedPenalties.reduce((sum, d) => sum + Number(d?.amount || 0), 0) * 100
   ) / 100;
 
   // 7. Waived / lifted deductions (Both penalty waivers and waived late minutes)
-  const waivedPenalties = userMonthDeductions.filter((d) => d.status === 'waived');
-  const waivedPenaltiesAmount = waivedPenalties.reduce((sum, d) => sum + d.amount, 0);
+  const waivedPenalties = userMonthDeductions.filter((d) => d?.status === 'waived');
+  const waivedPenaltiesAmount = waivedPenalties.reduce((sum, d) => sum + Number(d?.amount || 0), 0);
 
-  const waivedLateRecords = lateRecords.filter((r) => r.isLateDeductionWaived);
-  const waivedLateMinutes = waivedLateRecords.reduce((sum, r) => sum + (r.lateMinutes || 0), 0);
+  const waivedLateRecords = lateRecords.filter((r) => r?.isLateDeductionWaived);
+  const waivedLateMinutes = waivedLateRecords.reduce((sum, r) => sum + Number(r?.lateMinutes || 0), 0);
   const waivedLateAmount = (waivedLateMinutes / 60) * hourlyRate;
 
   const waivedDeductionsAmount = Math.round((waivedPenaltiesAmount + waivedLateAmount) * 100) / 100;
@@ -74,12 +78,12 @@ export function calculateMonthlyEmployeeLateSummary(
   const netSalary = Math.max(0, Math.round((baseSalary - totalNetDeductions) * 100) / 100);
 
   return {
-    userId: employee.id,
-    userName: employee.name,
-    userNameEn: employee.nameEn,
-    userEmail: employee.email,
-    department: employee.department,
-    avatar: employee.avatar,
+    userId: empId,
+    userName: employee?.name || 'موظف',
+    userNameEn: employee?.nameEn || employee?.name || 'Employee',
+    userEmail: employee?.email || '',
+    department: employee?.department || '',
+    avatar: employee?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
     month: selectedMonth,
     baseSalary,
     salaryCurrency,
@@ -127,8 +131,9 @@ export function formatMinutesHuman(minutes: number, lang: 'ar' | 'en'): string {
 /**
  * Formats a currency number with clean commas and 2 decimals
  */
-export function formatSalaryCurrency(amount: number, currency: string = 'ر.س'): string {
-  const formatted = amount.toLocaleString('en-US', {
+export function formatSalaryCurrency(amount?: number | null, currency: string = 'ر.س'): string {
+  const safeNum = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+  const formatted = safeNum.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
