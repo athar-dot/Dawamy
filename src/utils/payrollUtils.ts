@@ -2,22 +2,26 @@ import {
   UserProfile,
   AttendanceRecord,
   SalaryDeduction,
+  SalaryAdvance,
+  AdvanceInstallment,
   MonthlyEmployeeLateSummary,
 } from '../types';
 
 /**
  * Calculates the monthly late attendance summary, 4-hour grace quota tracking,
- * salary deductions (from excess late hours and disciplinary penalties),
+ * salary deductions (from excess late hours, disciplinary penalties, and salary advance installments),
  * and net payable salary for an employee.
  */
 export function calculateMonthlyEmployeeLateSummary(
   employee: UserProfile,
   attendanceRecords: AttendanceRecord[] = [],
   deductions: SalaryDeduction[] = [],
-  selectedMonth: string = '2026-09' // YYYY-MM
+  selectedMonth: string = '2026-09', // YYYY-MM
+  salaryAdvances: SalaryAdvance[] = []
 ): MonthlyEmployeeLateSummary {
   const safeRecords = Array.isArray(attendanceRecords) ? attendanceRecords : [];
   const safeDeductions = Array.isArray(deductions) ? deductions : [];
+  const safeAdvances = Array.isArray(salaryAdvances) ? salaryAdvances : [];
   const empId = employee?.id || '';
 
   // 1. Filter attendance records for this employee in the chosen month
@@ -73,8 +77,27 @@ export function calculateMonthlyEmployeeLateSummary(
 
   const waivedDeductionsAmount = Math.round((waivedPenaltiesAmount + waivedLateAmount) * 100) / 100;
 
-  // 8. Net deductions and net salary
-  const totalNetDeductions = Math.round((lateDeductionAmount + penaltyDeductionsAmount) * 100) / 100;
+  // 8. Salary Advance Installments for this Month
+  const userAdvances = safeAdvances.filter(
+    (adv) => adv?.userId === empId && (adv.status === 'approved' || adv.status === 'completed')
+  );
+
+  const activeAdvanceInstallments: AdvanceInstallment[] = [];
+  userAdvances.forEach((adv) => {
+    const inst = adv.installments?.find((i) => i.month === selectedMonth);
+    if (inst && (inst.status === 'pending' || inst.status === 'deducted')) {
+      activeAdvanceInstallments.push(inst);
+    }
+  });
+
+  const advanceInstallmentsAmount = Math.round(
+    activeAdvanceInstallments.reduce((sum, inst) => sum + Number(inst.amount || 0), 0) * 100
+  ) / 100;
+
+  // 9. Net deductions and net salary
+  const totalNetDeductions = Math.round(
+    (lateDeductionAmount + penaltyDeductionsAmount + advanceInstallmentsAmount) * 100
+  ) / 100;
   const netSalary = Math.max(0, Math.round((baseSalary - totalNetDeductions) * 100) / 100);
 
   return {
@@ -101,6 +124,9 @@ export function calculateMonthlyEmployeeLateSummary(
     lateDeductionAmount,
     penaltyDeductionsAmount,
     waivedDeductionsAmount,
+    advanceInstallmentsAmount,
+    activeAdvanceInstallments,
+    activeAdvanceLoans: userAdvances,
     totalNetDeductions,
     netSalary,
     lateRecords,

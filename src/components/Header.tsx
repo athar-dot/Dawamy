@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Building2,
   CalendarDays,
@@ -13,6 +13,7 @@ import {
   Clock,
   AlertCircle,
   ExternalLink,
+  PenTool,
 } from 'lucide-react';
 import { UserProfile, UserRole, NotificationItem } from '../types';
 
@@ -33,6 +34,7 @@ interface HeaderProps {
   onGoogleSignIn?: () => void;
   onGoogleSignOut?: () => void;
   firebaseAuthUser?: { email: string | null; displayName: string | null; photoURL?: string | null; uid?: string } | null;
+  onOpenSignatureModal?: () => void;
 }
 
 function safeFormatNotifTimestamp(timestamp: unknown, isAr: boolean): string {
@@ -102,10 +104,27 @@ export const Header: React.FC<HeaderProps> = ({
   onGoogleSignIn,
   onGoogleSignOut,
   firebaseAuthUser,
+  onOpenSignatureModal,
 }) => {
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifFilter, setNotifFilter] = useState<'all' | 'unread'>('all');
   const [currentTime, setCurrentTime] = useState('');
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  // Close notifications dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setShowNotifs(false);
+      }
+    };
+    if (showNotifs) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifs]);
 
   useEffect(() => {
     const updateTime = () => {
@@ -164,7 +183,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="w-full bg-[#FAF9F6]/95 backdrop-blur-md">
+    <header className="relative z-30 w-full bg-[#FAF9F6]/95 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20 gap-4">
           
@@ -231,7 +250,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Notifications trigger */}
-            <div className="relative">
+            <div ref={notifRef} className="relative z-50">
               <button
                 id="btn-notifications-trigger"
                 onClick={() => setShowNotifs(!showNotifs)}
@@ -250,7 +269,11 @@ export const Header: React.FC<HeaderProps> = ({
               {showNotifs && (
                 <div 
                   id="notifications-dropdown-panel"
-                  className={`absolute ${isAr ? 'left-0' : 'right-0'} mt-2 w-84 sm:w-96 bg-[#FAF9F6] border border-[#E5E2D9] rounded-2xl shadow-2xl p-4 z-50 ${isAr ? 'text-right' : 'text-left'} animate-in fade-in slide-in-from-top-2 duration-150`}
+                  className={`fixed sm:absolute top-16 sm:top-full sm:mt-2 inset-x-3 sm:inset-x-auto ${
+                    isAr ? 'sm:left-0' : 'sm:right-0'
+                  } sm:w-96 max-w-sm sm:max-w-none bg-[#FAF9F6] border border-[#E5E2D9] rounded-2xl shadow-2xl p-4 z-[100] ${
+                    isAr ? 'text-right' : 'text-left'
+                  } animate-in fade-in slide-in-from-top-2 duration-150`}
                 >
                   <div className="flex items-center justify-between pb-3 border-b border-[#E5E2D9]">
                     <div className="flex items-center gap-2">
@@ -391,6 +414,43 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Digital Signature Button (توقيع الحساب المعتمد للتقارير) */}
+            {onOpenSignatureModal && (
+              <button
+                type="button"
+                id="btn-header-signature"
+                onClick={onOpenSignatureModal}
+                title={
+                  currentUser.signatureDataUrl
+                    ? isAr
+                      ? 'التوقيع الرقمي معتمد - اضغط للتعديل'
+                      : 'Digital Signature active - click to edit'
+                    : isAr
+                    ? 'إضافة توقيعك الرقمي للتقارير والمسيرات'
+                    : 'Add digital signature for reports'
+                }
+                className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition shadow-xs cursor-pointer ${
+                  currentUser.signatureDataUrl
+                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                    : 'bg-[#FAF9F6] border-[#E5E2D9] text-[#5E7153] hover:bg-[#EFECE4]'
+                }`}
+              >
+                <PenTool className="w-3.5 h-3.5" />
+                <span className="truncate max-w-[100px]">
+                  {currentUser.signatureDataUrl
+                    ? isAr
+                      ? 'توقيعي المعتمد'
+                      : 'My Signature'
+                    : isAr
+                    ? 'إضافة توقيع'
+                    : 'Set Signature'}
+                </span>
+                {currentUser.signatureDataUrl && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                )}
+              </button>
+            )}
 
             {/* Current Active User Profile Pill */}
             <div 

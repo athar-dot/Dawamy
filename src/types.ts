@@ -37,6 +37,10 @@ export interface UserProfile {
   salary?: number; // Base monthly salary (e.g. 15000)
   salaryCurrency?: string; // e.g. "SAR" or "ر.س"
   graceLateHoursMonthly?: number; // Monthly allowed late hours (default 4.0)
+  signatureDataUrl?: string; // Base64 digital signature image (drawn/uploaded)
+  signatureType?: 'drawn' | 'uploaded' | 'typed';
+  signatureJobTitle?: string; // Official title appearing under the signature
+  signatureUpdatedAt?: string;
   balances: {
     wfhMonthlyTotal: number;
     wfhMonthlyUsed: number;
@@ -129,7 +133,17 @@ export interface PolicyFaqItem {
 // ----------------------------------------------------
 // BIOMETRIC ATTENDANCE & PUNCH DEVICE INTEGRATION TYPES
 // ----------------------------------------------------
-export type AttendanceStatus = 'present' | 'late' | 'early_leave' | 'late_and_early' | 'absent' | 'on_leave' | 'wfh' | 'weekend';
+export type AttendanceStatus =
+  | 'present'
+  | 'in_progress'
+  | 'missing_checkout'
+  | 'late'
+  | 'early_leave'
+  | 'late_and_early'
+  | 'absent'
+  | 'on_leave'
+  | 'wfh'
+  | 'weekend';
 
 export type BiometricVerifyMethod = 'fingerprint' | 'face' | 'card' | 'manual';
 
@@ -219,6 +233,55 @@ export interface SalaryDeduction {
   updatedAt?: string;
 }
 
+// ----------------------------------------------------
+// SALARY ADVANCES & INSTALLMENT LOANS (السلفيات والأقساط)
+// ----------------------------------------------------
+export type AdvanceStatus = 'pending' | 'approved' | 'rejected' | 'completed' | 'cancelled';
+export type AdvanceInstallmentStatus = 'pending' | 'deducted' | 'deferred' | 'paid';
+
+export interface AdvanceInstallment {
+  id: string;
+  installmentNumber: number; // 1, 2, 3...
+  month: string; // "YYYY-MM" e.g. "2026-09"
+  amount: number; // e.g. 1000
+  status: AdvanceInstallmentStatus;
+  deductedAt?: string;
+  deductedInPayslipId?: string;
+  notes?: string;
+}
+
+export interface SalaryAdvance {
+  id: string;
+  advanceNumber: string; // e.g. "ADV-2026-001"
+  userId: string;
+  userName: string;
+  userNameEn?: string;
+  userEmail: string;
+  department: string;
+  avatar?: string;
+  requestDate: string; // YYYY-MM-DD
+  totalAmount: number; // e.g. 6000
+  installmentsCount: number; // e.g. 6 months
+  monthlyInstallmentAmount: number; // e.g. 1000
+  startMonth: string; // "YYYY-MM"
+  endMonth: string; // "YYYY-MM"
+  reason: string;
+  status: AdvanceStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  paidAmount: number;
+  remainingAmount: number;
+  paidInstallmentsCount: number;
+  installments: AdvanceInstallment[];
+  guarantorName?: string;
+  employeeSignature?: string; // Digital signature
+  approverSignature?: string; // Digital signature
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface MonthlyEmployeeLateSummary {
   userId: string;
   userName: string;
@@ -243,7 +306,10 @@ export interface MonthlyEmployeeLateSummary {
   lateDeductionAmount: number; // excessLateHours * hourlyRate
   penaltyDeductionsAmount: number; // sum of applied disciplinary deductions
   waivedDeductionsAmount: number; // total value of waived deductions
-  totalNetDeductions: number; // lateDeductionAmount + penaltyDeductionsAmount
+  advanceInstallmentsAmount: number; // sum of active advance installments deducted this month
+  activeAdvanceInstallments?: AdvanceInstallment[];
+  activeAdvanceLoans?: SalaryAdvance[];
+  totalNetDeductions: number; // lateDeductionAmount + penaltyDeductionsAmount + advanceInstallmentsAmount
   netSalary: number; // baseSalary - totalNetDeductions
   lateRecords: AttendanceRecord[];
 }

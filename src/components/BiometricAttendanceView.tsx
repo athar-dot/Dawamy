@@ -27,6 +27,10 @@ import {
   Sliders,
   FileSpreadsheet,
   TrendingDown,
+  AlertCircle,
+  XCircle,
+  Info,
+  CalendarDays,
 } from 'lucide-react';
 import {
   UserProfile,
@@ -84,10 +88,17 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
   const [isPinging, setIsPinging] = useState<string | null>(null);
 
   // Simulation form
+  const now = new Date();
+  const padZero = (n: number) => n.toString().padStart(2, '0');
+  const currentTimeStr = `${padZero(now.getHours())}:${padZero(now.getMinutes())}`;
+  const todayStr = new Date().toISOString().split('T')[0];
+
   const [simUserId, setSimUserId] = useState(allUsers[0]?.id || '');
   const [simDeviceId, setSimDeviceId] = useState(biometricDevices[0]?.id || '');
   const [simPunchType, setSimPunchType] = useState<'check_in' | 'check_out'>('check_in');
   const [simMethod, setSimMethod] = useState<BiometricVerifyMethod>('fingerprint');
+  const [simTime, setSimTime] = useState<string>(companySchedule.startTime || '09:00');
+  const [simDate, setSimDate] = useState<string>(todayStr);
   const [simSuccessToast, setSimSuccessToast] = useState<string | null>(null);
 
   // New device form
@@ -99,7 +110,6 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
   const [newDevLocation, setNewDevLocation] = useState('');
 
   // Find current user's today attendance record
-  const todayStr = new Date().toISOString().split('T')[0];
   const userTodayRecord = attendanceRecords.find(
     (r) => r.userId === currentUser.id && r.date === todayStr
   );
@@ -137,7 +147,7 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
           body: JSON.stringify({
             deviceId: simDeviceId,
             enrollId: targetUser.biometricEnrollId || targetUser.id,
-            timestamp: new Date().toISOString(),
+            timestamp: `${simDate}T${simTime}:00`,
             punchType: simPunchType,
             verifyMethod: simMethod,
           }),
@@ -152,20 +162,60 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
         type: simPunchType,
         deviceId: simDeviceId,
         verifyMethod: simMethod,
+        customTime: simTime,
+        customDate: simDate,
       });
 
       setSimSuccessToast(
         isAr
-          ? `تم استقبال نبضة البصمة للموظف (${targetUser.name}) وتسجيل ${
-              simPunchType === 'check_in' ? 'الدخول' : 'الخروج'
-            } بنجاح!`
+          ? `تم رصد بصمة (${simPunchType === 'check_in' ? 'دخول' : 'خروج'}) للموظف (${targetUser.name}) في الوقت المحدد (${simTime}) واحتساب الحالة بدقة!`
           : `Biometric punch processed for (${targetUser.name}) as ${
               simPunchType === 'check_in' ? 'Check-in' : 'Check-out'
-            }!`
+            } at ${simTime}!`
       );
       setTimeout(() => setSimSuccessToast(null), 4000);
     } catch (err) {
       console.error('Simulation error:', err);
+    } finally {
+      setIsPunching(false);
+    }
+  };
+
+  // Run a complete 8-hour shift simulation (09:00 AM check-in + 05:00 PM check-out)
+  const handleRunFullShiftSimulation = async () => {
+    const targetUser = allUsers.find((u) => u.id === simUserId);
+    if (!targetUser) return;
+
+    try {
+      setIsPunching(true);
+      // 1. Record Check-In at company official start time (09:00)
+      await onRecordPunch({
+        userId: simUserId,
+        type: 'check_in',
+        deviceId: simDeviceId,
+        verifyMethod: simMethod,
+        customTime: companySchedule.startTime || '09:00',
+        customDate: simDate,
+      });
+
+      // 2. Record Check-Out at company official end time (17:00)
+      await onRecordPunch({
+        userId: simUserId,
+        type: 'check_out',
+        deviceId: simDeviceId,
+        verifyMethod: simMethod,
+        customTime: companySchedule.endTime || '17:00',
+        customDate: simDate,
+      });
+
+      setSimSuccessToast(
+        isAr
+          ? `تمت محاكاة يوم عمل متكامل للموظف (${targetUser.name}): حضور ${companySchedule.startTime} ص + انصراف ${companySchedule.endTime} م (8 ساعات دوام مكتملة 100% بدون تأخير أو عجز)!`
+          : `Full shift simulated for (${targetUser.name}): Checked in ${companySchedule.startTime} + checked out ${companySchedule.endTime} (8.0 hours complete)!`
+      );
+      setTimeout(() => setSimSuccessToast(null), 5000);
+    } catch (err) {
+      console.error('Full shift simulation error:', err);
     } finally {
       setIsPunching(false);
     }
@@ -467,6 +517,34 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
       ---------------------------------------------------- */}
       {activeSubTab === 'records' && (
         <div className="space-y-4">
+          {/* Active Shift Policy Notice Banner */}
+          <div className="p-3.5 rounded-2xl bg-[#F4F3EE] border border-[#E5E2D9] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-[#5E7153] text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Clock className="w-4 h-4" />
+              </div>
+              <div className="text-xs">
+                <span className="font-bold text-[#2D3628]">
+                  {isAr ? 'سياسة الدوام المعتمدة للشركة:' : 'Active Shift Policy:'}{' '}
+                </span>
+                <span className="font-bold text-[#5E7153]">
+                  {companySchedule.startTime} {isAr ? 'صباحاً' : 'AM'} {isAr ? 'إلى' : 'to'} {companySchedule.endTime} {isAr ? 'مساءً' : 'PM'} ({companySchedule.dailyWorkHours} {isAr ? 'ساعات عمل' : 'hrs'})
+                </span>
+                <span className="text-[#65635E] block sm:inline sm:mr-2">
+                  • {isAr ? `سماح الحضور: ${companySchedule.checkInGraceMinutes} دقيقة | سماح الانصراف: ${companySchedule.checkOutGraceMinutes} دقائق` : `Grace in: ${companySchedule.checkInGraceMinutes}m | Grace out: ${companySchedule.checkOutGraceMinutes}m`}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onOpenScheduleModal}
+              className="self-end sm:self-auto text-[11px] font-bold text-[#5E7153] hover:text-[#4E5E44] underline cursor-pointer"
+            >
+              {isAr ? 'تعديل سياسة الدوام' : 'Modify Shift'}
+            </button>
+          </div>
+
           {/* Search and Filters Bar */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-white border border-[#E5E2D9] shadow-xs">
             <div className="relative flex-1">
@@ -579,7 +657,7 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
                             </div>
                           ) : rec.checkInTime && !metrics.isWeekend ? (
                             <div className="text-[10px] text-[#5E7153] font-medium mt-0.5">
-                              {isAr ? 'في الموعد' : 'On Time'}
+                              {isAr ? 'حضور في الموعد' : 'On Time'}
                             </div>
                           ) : null}
                         </td>
@@ -588,9 +666,15 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
                         <td className="py-3 px-3">
                           <div className="font-mono font-bold text-[#65635E]">
                             {rec.checkOutTime || (
-                              <span className="text-[#8C8984] italic font-normal">
-                                {isAr ? 'لم يسجل بعد' : 'Not recorded'}
-                              </span>
+                              rec.checkInTime ? (
+                                <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[10px] font-medium border border-amber-200">
+                                  {isAr ? 'على رأس العمل (بانتظار الانصراف)' : 'On Duty (In Progress)'}
+                                </span>
+                              ) : (
+                                <span className="text-[#8C8984] italic font-normal">
+                                  {isAr ? 'لم يسجل' : 'Not recorded'}
+                                </span>
+                              )
                             )}
                           </div>
                           {metrics.earlyLeaveMinutes > 0 ? (
@@ -604,6 +688,8 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
                         <td className="py-3 px-3 font-mono font-bold text-[#2D3628]">
                           {metrics.totalWorkingHours > 0
                             ? `${metrics.totalWorkingHours} h`
+                            : rec.checkInTime && !rec.checkOutTime
+                            ? <span className="text-amber-700 text-[11px] font-medium">{isAr ? 'دوام جارٍ' : 'Ongoing'}</span>
                             : '-'}
                         </td>
 
@@ -620,10 +706,15 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
                             </div>
                           ) : metrics.isWeekend ? (
                             <span className="text-[#8C8984] text-[11px]">-</span>
+                          ) : rec.checkInTime && !rec.checkOutTime ? (
+                            <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[10px] font-medium border border-amber-200">
+                              <Clock className="w-3 h-3 text-amber-600 animate-pulse" />
+                              <span>{isAr ? 'دوام جارٍ' : 'In Progress'}</span>
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-[#5E7153] text-[11px] font-semibold">
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>{isAr ? 'مكتمل' : 'Full'}</span>
+                              <span>{isAr ? 'مكتمل (8س)' : 'Full (8h)'}</span>
                             </span>
                           )}
                         </td>
@@ -666,25 +757,55 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
                               <Laptop className="w-3 h-3 text-[#2563EB]" />
                               {isAr ? 'عمل عن بُعد' : 'WFH'}
                             </span>
+                          ) : rec.status === 'on_leave' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                              {isAr ? 'إجازة رسمية' : 'On Leave'}
+                            </span>
+                          ) : metrics.status === 'weekend' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-stone-100 text-stone-600">
+                              {isAr ? 'عطلة أسبوعية' : 'Weekend'}
+                            </span>
+                          ) : metrics.status === 'absent' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
+                              <XCircle className="w-3 h-3 text-red-600" />
+                              {isAr ? 'غياب' : 'Absent'}
+                            </span>
+                          ) : rec.checkInTime && !rec.checkOutTime ? (
+                            metrics.lateMinutes > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FFF4E5] text-[#B25E00] border border-[#FFE2B8]">
+                                <AlertTriangle className="w-3 h-3 text-[#B25E00]" />
+                                {isAr ? `على رأس العمل (تأخر ${metrics.lateMinutes} د)` : `On Duty (Late ${metrics.lateMinutes}m)`}
+                              </span>
+                            ) : metrics.status === 'missing_checkout' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-stone-100 text-stone-700 border border-stone-300">
+                                <AlertCircle className="w-3 h-3 text-stone-500" />
+                                {isAr ? 'لم يسجل انصراف' : 'Missing Checkout'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                <Clock className="w-3 h-3 text-emerald-600 animate-pulse" />
+                                {isAr ? 'على رأس العمل (حضور في الموعد)' : 'On Duty (Clocked In)'}
+                              </span>
+                            )
                           ) : metrics.lateMinutes > 0 && metrics.earlyLeaveMinutes > 0 ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
                               <AlertTriangle className="w-3 h-3 text-rose-600" />
-                              {isAr ? 'تأخير وانصراف' : 'Late & Early'}
+                              {isAr ? 'تأخير وانصراف مبكر' : 'Late & Early'}
                             </span>
                           ) : metrics.lateMinutes > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FFF4E5] text-[#B25E00]">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FFF4E5] text-[#B25E00] border border-[#FFE2B8]">
                               <AlertTriangle className="w-3 h-3 text-[#B25E00]" />
-                              {isAr ? 'تأخير دخول' : 'Late Check-in'}
+                              {isAr ? `تأخير دخول (${metrics.lateMinutes} د)` : `Late Check-in (${metrics.lateMinutes}m)`}
                             </span>
                           ) : metrics.earlyLeaveMinutes > 0 ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-800 border border-orange-200">
                               <TrendingDown className="w-3 h-3 text-orange-600" />
-                              {isAr ? 'انصراف مبكر' : 'Early Leave'}
+                              {isAr ? `انصراف مبكر (${metrics.earlyLeaveMinutes} د)` : `Early Leave (${metrics.earlyLeaveMinutes}m)`}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#E9EDD9] text-[#2D3628]">
                               <CheckCircle2 className="w-3 h-3 text-[#5E7153]" />
-                              {isAr ? 'حاضر في الموعد' : 'On Time'}
+                              {isAr ? 'دوام مكتمل (حاضر في الموعد)' : 'Full Shift (On Time)'}
                             </span>
                           )}
                         </td>
@@ -891,6 +1012,28 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
               </select>
             </div>
 
+            {/* Shift Policy Reference Card */}
+            <div className="p-3.5 rounded-xl bg-[#FAF9F6] border border-[#E5E2D9] text-xs space-y-1.5">
+              <div className="flex items-center justify-between font-bold text-[#2D3628]">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-[#5E7153]" />
+                  <span>{isAr ? 'الدوام المعتمد للاحتساب:' : 'Shift Applied:'}</span>
+                </div>
+                <span className="text-[#5E7153] font-mono font-extrabold">
+                  {companySchedule.startTime} - {companySchedule.endTime} ({companySchedule.dailyWorkHours} {isAr ? 'ساعات' : 'hrs'})
+                </span>
+              </div>
+              <p className="text-[11px] text-[#65635E]">
+                {isAr
+                  ? `• فترة سماح الحضور: ${companySchedule.checkInGraceMinutes} دقيقة (حتى 09:15 ص بدون احتساب تأخير).`
+                  : `• Check-in grace: ${companySchedule.checkInGraceMinutes} mins (up to 09:15 AM).`}
+                <br />
+                {isAr
+                  ? `• فترة سماح الانصراف: ${companySchedule.checkOutGraceMinutes} دقائق (الانصراف بدءاً من 04:55 م يعتبر مكتملاً بدون عجز).`
+                  : `• Check-out grace: ${companySchedule.checkOutGraceMinutes} mins (departure from 04:55 PM onwards is 100% full shift).`}
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Punch Type */}
               <div>
@@ -900,8 +1043,11 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setSimPunchType('check_in')}
-                    className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                    onClick={() => {
+                      setSimPunchType('check_in');
+                      if (simTime === '17:00') setSimTime(companySchedule.startTime || '09:00');
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                       simPunchType === 'check_in'
                         ? 'bg-[#5E7153] text-white shadow-xs'
                         : 'bg-[#FAF9F6] text-[#65635E] border border-[#E5E2D9]'
@@ -912,8 +1058,11 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
 
                   <button
                     type="button"
-                    onClick={() => setSimPunchType('check_out')}
-                    className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                    onClick={() => {
+                      setSimPunchType('check_out');
+                      if (simTime === '09:00') setSimTime(companySchedule.endTime || '17:00');
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                       simPunchType === 'check_out'
                         ? 'bg-[#2D3628] text-white shadow-xs'
                         : 'bg-[#FAF9F6] text-[#65635E] border border-[#E5E2D9]'
@@ -941,23 +1090,133 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={isPunching}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#5E7153] hover:bg-[#4E5E44] active:scale-98 text-white font-bold text-xs transition-all shadow-md shadow-[#5E7153]/20"
-            >
-              {isPunching ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>{isAr ? 'جاري إرسال النبضة ومعالجتها...' : 'Transmitting punch...'}</span>
-                </>
-              ) : (
-                <>
-                  <Fingerprint className="w-4 h-4" />
-                  <span>{isAr ? 'إرسال نبضة البصمة الآن' : 'Trigger Biometric Punch Event'}</span>
-                </>
-              )}
-            </button>
+            {/* Date and Time Pickers */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1.5">
+                  {isAr ? 'تاريخ البصمة' : 'Punch Date'}
+                </label>
+                <input
+                  type="date"
+                  value={simDate}
+                  onChange={(e) => setSimDate(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-[#FAF9F6] border border-[#E5E2D9] text-xs text-[#2D3628] focus:outline-none focus:border-[#5E7153]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1.5">
+                  {isAr ? 'وقت البصمة (ساعة:دقيقة)' : 'Punch Time (HH:MM)'}
+                </label>
+                <input
+                  type="time"
+                  value={simTime}
+                  onChange={(e) => setSimTime(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-[#FAF9F6] border border-[#E5E2D9] text-xs font-mono font-bold text-[#2D3628] focus:outline-none focus:border-[#5E7153]"
+                />
+              </div>
+            </div>
+
+            {/* Quick Time Presets for instant accurate testing */}
+            <div>
+              <label className="block text-[11px] font-bold text-[#65635E] mb-1.5">
+                {isAr ? 'نماذج أوقات سريعة للاختبار:' : 'Quick Test Time Presets:'}
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSimPunchType('check_in');
+                    setSimTime('09:00');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-[#E9EDD9] text-[#2D3628] hover:bg-[#D9E0D2] text-[11px] font-bold transition-colors cursor-pointer"
+                >
+                  09:00 ص ({isAr ? 'حضور في الموعد' : 'On-time In'})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSimPunchType('check_in');
+                    setSimTime('09:30');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 text-[11px] font-bold transition-colors cursor-pointer"
+                >
+                  09:30 ص ({isAr ? 'تأخير 30 د' : 'Late 30m'})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSimPunchType('check_out');
+                    setSimTime('17:00');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-[#2D3628] text-white hover:bg-[#384532] text-[11px] font-bold transition-colors cursor-pointer"
+                >
+                  05:00 م ({isAr ? 'انصراف 8 ساعات كاملة' : 'On-time Out 8h'})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSimPunchType('check_out');
+                    setSimTime('15:30');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-orange-50 text-orange-900 border border-orange-200 hover:bg-orange-100 text-[11px] font-bold transition-colors cursor-pointer"
+                >
+                  03:30 م ({isAr ? 'انصراف مبكر 1.5 س' : 'Early Out 1.5h'})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = new Date();
+                    setSimTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-[#FAF9F6] text-[#65635E] border border-[#E5E2D9] hover:bg-[#EFECE4] text-[11px] font-medium transition-colors cursor-pointer"
+                >
+                  {isAr ? 'الوقت الفعلي الحالي' : 'Current Time'}
+                </button>
+              </div>
+            </div>
+
+            {/* Buttons: Single Punch & Full 8-Hour Shift Simulation */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={isPunching}
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#5E7153] hover:bg-[#4E5E44] active:scale-98 text-white font-bold text-xs transition-all shadow-md shadow-[#5E7153]/20 cursor-pointer"
+              >
+                {isPunching ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? 'جاري الرصد...' : 'Processing...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint className="w-4 h-4" />
+                    <span>
+                      {isAr
+                        ? `إرسال نبضة ${simPunchType === 'check_in' ? 'الدخول' : 'الخروج'} (${simTime})`
+                        : `Log ${simPunchType === 'check_in' ? 'Check-in' : 'Check-out'} (${simTime})`}
+                    </span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRunFullShiftSimulation}
+                disabled={isPunching}
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#2D3628] hover:bg-[#3d4937] active:scale-98 text-white font-bold text-xs transition-all shadow-md shadow-[#2D3628]/20 cursor-pointer"
+                title={isAr ? 'تسجيل حضور 09:00 ص وخروج 05:00 م دفعة واحدة لاختبار 8 ساعات كاملة' : 'Simulate 09:00 AM check-in and 05:00 PM check-out in one click'}
+              >
+                <CheckCircle2 className="w-4 h-4 text-[#A3B899]" />
+                <span>
+                  {isAr ? 'اختبار دورة كاملة (09:00 ص إلى 05:00 م)' : 'Simulate Full 8h Shift'}
+                </span>
+              </button>
+            </div>
           </form>
         </div>
       )}

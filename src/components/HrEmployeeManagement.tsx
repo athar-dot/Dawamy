@@ -28,9 +28,12 @@ import {
   Award,
   FileSpreadsheet,
   Fingerprint,
+  DollarSign,
+  PenTool,
 } from 'lucide-react';
 import { UserProfile, UserRole, WorkStatus } from '../types';
 import { BulkBalanceImportModal } from './BulkBalanceImportModal';
+import { formatSalaryCurrency } from '../utils/payrollUtils';
 
 interface HrEmployeeManagementProps {
   users: UserProfile[];
@@ -106,6 +109,9 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
     wfhMonthlyTotal: number;
     annualLeaveTotal: number;
     avatar: string;
+    salary: number;
+    salaryCurrency: string;
+    graceLateHoursMonthly: number;
   }>({
     name: '',
     nameEn: '',
@@ -122,6 +128,9 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
     wfhMonthlyTotal: 8,
     annualLeaveTotal: 25,
     avatar: PRESET_AVATARS[0],
+    salary: 15000,
+    salaryCurrency: 'ر.س',
+    graceLateHoursMonthly: 4.0,
   });
 
   // Extract list of managers
@@ -207,6 +216,9 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
       wfhMonthlyTotal: 8,
       annualLeaveTotal: 25,
       avatar: PRESET_AVATARS[Math.floor(Math.random() * PRESET_AVATARS.length)],
+      salary: 15000,
+      salaryCurrency: 'ر.س',
+      graceLateHoursMonthly: 4.0,
     });
     setIsModalOpen(true);
   };
@@ -230,6 +242,9 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
       wfhMonthlyTotal: user.balances?.wfhMonthlyTotal || 8,
       annualLeaveTotal: user.balances?.annualLeaveTotal || 25,
       avatar: user.avatar,
+      salary: user.salary || 14000,
+      salaryCurrency: user.salaryCurrency || 'ر.س',
+      graceLateHoursMonthly: user.graceLateHoursMonthly !== undefined ? user.graceLateHoursMonthly : 4.0,
     });
     setIsModalOpen(true);
   };
@@ -260,6 +275,9 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
           managerName: formData.managerName,
           managerId: formData.managerId,
           avatar: formData.avatar,
+          salary: Number(formData.salary) || 14000,
+          salaryCurrency: formData.salaryCurrency || 'ر.س',
+          graceLateHoursMonthly: Number(formData.graceLateHoursMonthly) !== undefined ? Number(formData.graceLateHoursMonthly) : 4.0,
           balances: {
             wfhMonthlyTotal: Number(formData.wfhMonthlyTotal) || 8,
             wfhMonthlyUsed: existingUser?.balances?.wfhMonthlyUsed || 0,
@@ -287,6 +305,9 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
           managerName: formData.managerName || (isAr ? 'الإدارة المباشرة' : 'Direct Management'),
           managerId: formData.managerId,
           avatar: formData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=5E7153&color=fff&bold=true`,
+          salary: Number(formData.salary) || 15000,
+          salaryCurrency: formData.salaryCurrency || 'ر.س',
+          graceLateHoursMonthly: Number(formData.graceLateHoursMonthly) !== undefined ? Number(formData.graceLateHoursMonthly) : 4.0,
           balances: {
             wfhMonthlyTotal: Number(formData.wfhMonthlyTotal) || 8,
             wfhMonthlyUsed: 0,
@@ -692,6 +713,30 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
                           </span>
                         </div>
                       )}
+
+                      {/* Salary & Signature Status */}
+                      <div className="p-2.5 rounded-xl bg-white border border-[#E5E2D9] flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5 font-bold text-[#2D3628]">
+                          <DollarSign className="w-3.5 h-3.5 text-[#5E7153]" />
+                          <span>{formatSalaryCurrency(user.salary || 14000)}</span>
+                          <span className="text-[10px] text-[#8C887B] font-normal">
+                            ({user.graceLateHoursMonthly !== undefined ? user.graceLateHoursMonthly : 4} {isAr ? 'س سماحية' : 'h grace'})
+                          </span>
+                        </div>
+                        <div>
+                          {user.signatureDataUrl ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>{isAr ? 'توقيع معتمد' : 'Signed'}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#FAF9F6] text-[#8C887B] border border-[#E5E2D9]">
+                              <PenTool className="w-3 h-3" />
+                              <span>{isAr ? 'بدون توقيع' : 'No Signature'}</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
 
                       {/* Leave & WFH Balances */}
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#E5E2D9] text-center text-xs">
@@ -1178,6 +1223,59 @@ export const HrEmployeeManagement: React.FC<HrEmployeeManagementProps> = ({
                         }`}
                       />
                     ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. الراتب الشهري وحصة التأخير المسموحة */}
+              <div className="space-y-4 pt-4 border-t border-[#E5E2D9]">
+                <h4 className="text-xs font-bold text-[#5E7153] uppercase tracking-wider flex items-center gap-1.5">
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>{isAr ? '4. الراتب وسماحية التأخير الشهرية (Payroll & Grace)' : '4. Salary & Monthly Grace Allowance'}</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                      {isAr ? 'الراتب الأساسي الشهري (ر.س)' : 'Monthly Base Salary (SAR)'}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        id="input-employee-salary"
+                        min={1000}
+                        step={500}
+                        value={formData.salary}
+                        onChange={(e) => setFormData({ ...formData, salary: parseFloat(e.target.value) || 0 })}
+                        placeholder="15000"
+                        className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-[#E5E2D9] rounded-xl focus:ring-2 focus:ring-[#5E7153] focus:outline-none font-bold text-[#2D3628]"
+                      />
+                      <span className="absolute left-3 top-2.5 text-xs text-[#8C887B] font-bold">
+                        {formData.salaryCurrency}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[#65635E] mt-1">
+                      {isAr ? 'يُعتمد لاحتساب أجر الساعة والسلفيات والخصومات' : 'Used for hourly rate, loan deductions, and payroll'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                      {isAr ? 'رصيد ساعات التأخير المسموحة شهرياً (ساعات)' : 'Monthly Grace Delay Allowance (Hours)'}
+                    </label>
+                    <input
+                      type="number"
+                      id="input-employee-grace-hours"
+                      min={0}
+                      max={20}
+                      step={0.5}
+                      value={formData.graceLateHoursMonthly}
+                      onChange={(e) => setFormData({ ...formData, graceLateHoursMonthly: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-[#E5E2D9] rounded-xl focus:ring-2 focus:ring-[#5E7153] focus:outline-none font-bold text-[#2D3628]"
+                    />
+                    <p className="text-[10px] text-[#65635E] mt-1">
+                      {isAr ? 'افتراضي 4.0 ساعات تأخير معفية تماماً بدون خصم مالي' : 'Default 4.0 hours grace before any financial deduction'}
+                    </p>
                   </div>
                 </div>
               </div>

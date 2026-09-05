@@ -7,13 +7,13 @@ export const DEFAULT_COMPANY_SCHEDULE: CompanyWorkSchedule = {
   companyNameEn: 'Dawamy Tech Solutions Ltd.',
   workDays: [0, 1, 2, 3, 4], // Sunday to Thursday (الأحد إلى الخميس)
   dailyWorkHours: 8.0,
-  startTime: '08:00',
-  endTime: '16:00',
+  startTime: '09:00',
+  endTime: '17:00',
   checkInGraceMinutes: 15,
   checkOutGraceMinutes: 5,
   preset: 'sun_thu_8h',
-  description: 'دوام رسمي 8 ساعات يومياً من الأحد إلى الخميس مع فترة سماح 15 دقيقة صباحاً و5 دقائق عند الانصراف.',
-  descriptionEn: 'Official 8-hour daily schedule from Sunday to Thursday with 15 min check-in grace & 5 min checkout grace.',
+  description: 'دوام رسمي 8 ساعات يومياً من الأحد إلى الخميس من 09:00 صباحاً إلى 05:00 مساءً مع فترة سماح 15 دقيقة صباحاً و5 دقائق عند الانصراف.',
+  descriptionEn: 'Official 8-hour daily schedule from Sunday to Thursday (09:00 AM to 05:00 PM) with 15 min check-in grace & 5 min checkout grace.',
 };
 
 export interface SchedulePresetOption {
@@ -33,29 +33,29 @@ export interface SchedulePresetOption {
 export const WORK_SCHEDULE_PRESETS: SchedulePresetOption[] = [
   {
     id: 'sun_thu_8h',
-    nameAr: 'الأحد إلى الخميس (8 ساعات: 08:00 ص - 04:00 م)',
-    nameEn: 'Sun to Thu (8 hrs: 08:00 AM - 04:00 PM)',
+    nameAr: 'الأحد إلى الخميس (8 ساعات: 09:00 ص - 05:00 م)',
+    nameEn: 'Sun to Thu (8 hrs: 09:00 AM - 05:00 PM)',
     workDays: [0, 1, 2, 3, 4],
     dailyWorkHours: 8.0,
-    startTime: '08:00',
-    endTime: '16:00',
+    startTime: '09:00',
+    endTime: '17:00',
     checkInGraceMinutes: 15,
     checkOutGraceMinutes: 5,
-    descriptionAr: 'النظام الأكثر شيوعاً في الشركات والمؤسسات (40 ساعة أسبوعياً).',
-    descriptionEn: 'Standard enterprise shift schedule (40 hours per week).',
+    descriptionAr: 'النظام المعتمد الأكثر شيوعاً في الشركات والمؤسسات (40 ساعة أسبوعياً - 09:00 ص إلى 05:00 م).',
+    descriptionEn: 'Standard enterprise shift schedule (40 hours per week - 09:00 AM to 05:00 PM).',
   },
   {
     id: 'sat_thu_8h',
-    nameAr: 'السبت إلى الخميس (8 ساعات: 08:00 ص - 04:00 م)',
-    nameEn: 'Sat to Thu (8 hrs: 08:00 AM - 04:00 PM)',
+    nameAr: 'السبت إلى الخميس (8 ساعات: 09:00 ص - 05:00 م)',
+    nameEn: 'Sat to Thu (8 hrs: 09:00 AM - 05:00 PM)',
     workDays: [6, 0, 1, 2, 3, 4], // 6 is Saturday
     dailyWorkHours: 8.0,
-    startTime: '08:00',
-    endTime: '16:00',
+    startTime: '09:00',
+    endTime: '17:00',
     checkInGraceMinutes: 15,
     checkOutGraceMinutes: 5,
-    descriptionAr: 'نظام 6 أيام عمل أسبوعياً للمنشآت والمصانع وشركات المقاولات والتشغيل (48 ساعة أسبوعياً).',
-    descriptionEn: '6-day operational work week for logistics, contracting and retail (48 hours per week).',
+    descriptionAr: 'نظام 6 أيام عمل أسبوعياً للمنشآت والمصانع (48 ساعة أسبوعياً - 09:00 ص إلى 05:00 م).',
+    descriptionEn: '6-day operational work week for logistics and retail (48 hours per week - 09:00 AM to 05:00 PM).',
   },
   {
     id: 'sun_thu_7h',
@@ -116,12 +116,17 @@ export function parseTimeToMinutes(timeStr?: string): number | null {
   const raw = timeStr.trim();
   if (!raw) return null;
 
+  // Normalize Eastern Arabic / Persian digits to Latin digits
+  const normalized = raw
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+
   // Check 12-hour format with AM/PM or ص/م
   const isPM = raw.toLowerCase().includes('pm') || raw.includes('م') || raw.includes('مساء');
   const isAM = raw.toLowerCase().includes('am') || raw.includes('ص') || raw.includes('صباح');
 
   // Strip non-digit and non-colon characters
-  const cleanStr = raw.replace(/[^\d:]/g, '');
+  const cleanStr = normalized.replace(/[^\d:]/g, '');
   const parts = cleanStr.split(':');
   if (parts.length < 2) return null;
 
@@ -197,15 +202,17 @@ export function calculateAttendanceMetrics({
   status: AttendanceRecord['status'];
 } {
   const safeSchedule = schedule || DEFAULT_COMPANY_SCHEDULE;
-  const dateObj = new Date(date);
+  // Parse date safely without timezone day shifts
+  const [y, m, d] = date.split('-').map(Number);
+  const dateObj = (!isNaN(y) && !isNaN(m) && !isNaN(d)) ? new Date(y, m - 1, d) : new Date(date);
   const dayOfWeek = isNaN(dateObj.getTime()) ? 0 : dateObj.getDay();
 
   const isWeekend = !safeSchedule.workDays.includes(dayOfWeek);
   const dailyRequiredHours = isWeekend ? 0 : safeSchedule.dailyWorkHours;
   const requiredTargetMinutes = dailyRequiredHours * 60;
 
-  const officialStartMins = parseTimeToMinutes(safeSchedule.startTime) ?? 8 * 60;
-  const officialEndMins = parseTimeToMinutes(safeSchedule.endTime) ?? 16 * 60;
+  const officialStartMins = parseTimeToMinutes(safeSchedule.startTime) ?? 9 * 60;
+  const officialEndMins = parseTimeToMinutes(safeSchedule.endTime) ?? 17 * 60;
 
   const actualInMins = parseTimeToMinutes(checkInTime);
   const actualOutMins = parseTimeToMinutes(checkOutTime);
@@ -234,7 +241,7 @@ export function calculateAttendanceMetrics({
   if (actualInMins !== null && actualOutMins !== null) {
     actualWorkedMinutes = Math.max(0, actualOutMins - actualInMins);
   } else if (actualInMins !== null) {
-    // Check in exists but not checked out yet
+    // Check-in exists but not checked out yet (workday in progress)
     actualWorkedMinutes = 0;
   }
 
@@ -242,19 +249,28 @@ export function calculateAttendanceMetrics({
     ? Math.round((actualWorkedMinutes / 60) * 100) / 100
     : 0;
 
+  // Check if the record is for today
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const isToday = date === todayIso;
+
   // 4. Calculate total daily shortage compared to required hours
   let dailyShortageMinutes = 0;
   if (!isWeekend) {
     if (actualInMins !== null && actualOutMins !== null) {
-      // Comparison to target daily hours
-      const deficitByHours = Math.max(0, requiredTargetMinutes - actualWorkedMinutes);
-      // Combined check-in delay + early checkout delay
+      // Delays calculation:
+      // If employee arrived within grace (lateMinutes === 0) and left at or after official end (earlyLeaveMinutes === 0),
+      // there is ZERO penalty or shortage (dually compliant with 8h official shift from 09:00 to 17:00).
       const combinedDelays = lateMinutes + earlyLeaveMinutes;
-      // Total shortage accounts for both the deficit vs required hours and any punctual delays
-      dailyShortageMinutes = Math.max(deficitByHours, combinedDelays);
+      dailyShortageMinutes = combinedDelays;
     } else if (actualInMins !== null) {
-      // Still in progress or missing check-out
-      dailyShortageMinutes = lateMinutes;
+      if (isToday) {
+        // Still at work today: only the morning arrival delay is counted as shortage so far
+        dailyShortageMinutes = lateMinutes;
+      } else {
+        // Past day with missing check-out: deficit includes morning delay or incomplete shift
+        dailyShortageMinutes = Math.max(lateMinutes, Math.round(requiredTargetMinutes / 2));
+      }
     } else {
       // Absent or unrecorded
       dailyShortageMinutes = requiredTargetMinutes;
@@ -263,12 +279,20 @@ export function calculateAttendanceMetrics({
 
   const dailyShortageHours = Math.round((dailyShortageMinutes / 60) * 100) / 100;
 
-  // 5. Determine status
+  // 5. Determine precise status
   let status: AttendanceRecord['status'] = 'present';
   if (isWeekend) {
     status = 'weekend';
   } else if (actualInMins === null && actualOutMins === null) {
     status = 'absent';
+  } else if (actualInMins !== null && actualOutMins === null) {
+    // Only check-in recorded! Checkout has not occurred yet
+    if (isToday) {
+      status = lateMinutes > 0 ? 'late' : 'in_progress';
+    } else {
+      // Missing checkout on past day
+      status = 'missing_checkout';
+    }
   } else if (lateMinutes > 0 && earlyLeaveMinutes > 0) {
     status = 'late_and_early';
   } else if (lateMinutes > 0) {
@@ -276,6 +300,7 @@ export function calculateAttendanceMetrics({
   } else if (earlyLeaveMinutes > 0) {
     status = 'early_leave';
   } else {
+    // Full 8 hours worked and on time (arrived within grace, left at or after official checkout)
     status = 'present';
   }
 
@@ -477,11 +502,13 @@ export function exportAttendanceAndShortageExcel({
 
       const dayName = getDayName(r.date, isAr);
 
-      let statusLabel = isAr ? 'حاضر' : 'Present';
+      let statusLabel = isAr ? 'حاضر (مكتمل)' : 'Present (Completed)';
       if (metrics.isWeekend) statusLabel = isAr ? 'عطلة أسبوعية' : 'Weekend';
       else if (r.status === 'wfh') statusLabel = isAr ? 'عمل عن بعد' : 'Remote WFH';
       else if (r.status === 'on_leave') statusLabel = isAr ? 'إجازة رسمية' : 'On Leave';
       else if (metrics.status === 'absent') statusLabel = isAr ? 'غياب' : 'Absent';
+      else if (metrics.status === 'in_progress') statusLabel = isAr ? 'على رأس العمل (دوام جارٍ)' : 'On Duty (In Progress)';
+      else if (metrics.status === 'missing_checkout') statusLabel = isAr ? 'لم يسجل انصراف' : 'Missing Checkout';
       else if (metrics.lateMinutes > 0 && metrics.earlyLeaveMinutes > 0)
         statusLabel = isAr ? 'تأخير وانصراف مبكر' : 'Late & Early Leave';
       else if (metrics.lateMinutes > 0) statusLabel = isAr ? 'تأخير حضور' : 'Late Check-in';

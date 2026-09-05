@@ -31,6 +31,7 @@ import {
   UserProfile,
   UserRole,
   LeaveOrWfhRequest,
+  RequestStatus,
   TeamMemberStatus,
   NotificationItem,
   WorkStatus,
@@ -177,7 +178,21 @@ export default function App() {
   const [companySchedule, setCompanySchedule] = useState<CompanyWorkSchedule>(() => {
     try {
       const saved = localStorage.getItem('dawamy_company_schedule');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Seamlessly migrate legacy 08:00 - 16:00 to the 09:00 - 17:00 8-hour shift requested by user
+        if (parsed.startTime === '08:00' && parsed.endTime === '16:00') {
+          return {
+            ...parsed,
+            startTime: '09:00',
+            endTime: '17:00',
+            dailyWorkHours: 8.0,
+            nameAr: 'الدوام المعتمد (8 ساعات: 09:00 ص - 05:00 م)',
+            nameEn: 'Standard Shift (8 hrs: 09:00 AM - 05:00 PM)',
+          };
+        }
+        return parsed;
+      }
     } catch (e) {
       console.error('Error loading company schedule', e);
     }
@@ -1168,11 +1183,8 @@ export default function App() {
       const targetUser = users.find((u) => u.id === userId) || currentUser;
       const todayDate = customDate || new Date().toISOString().split('T')[0];
       const now = new Date();
-      const timeNowStr = customTime || now.toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
+      const padZero = (n: number) => n.toString().padStart(2, '0');
+      const timeNowStr = customTime || `${padZero(now.getHours())}:${padZero(now.getMinutes())}`;
 
       const existingRec = attendanceRecords.find((r) => r.userId === targetUser.id && r.date === todayDate);
       const chosenDevice = biometricDevices.find((d) => d.id === deviceId) || biometricDevices[0];
@@ -1198,18 +1210,22 @@ export default function App() {
         checkInTime: inTime,
         checkOutTime: outTime,
         status: metrics.status,
-        lateMinutes: metrics.lateMinutes,
-        earlyLeaveMinutes: metrics.earlyLeaveMinutes,
-        dailyRequiredHours: metrics.dailyRequiredHours,
-        dailyShortageMinutes: metrics.dailyShortageMinutes,
-        dailyShortageHours: metrics.dailyShortageHours,
-        officialStartTime: companySchedule.startTime,
-        officialEndTime: companySchedule.endTime,
-        totalWorkingHours: metrics.totalWorkingHours,
-        verifyMethod,
-        deviceId: chosenDevice?.id,
+        lateMinutes: metrics.lateMinutes ?? 0,
+        earlyLeaveMinutes: metrics.earlyLeaveMinutes ?? 0,
+        dailyRequiredHours: metrics.dailyRequiredHours ?? companySchedule.dailyWorkHours ?? 8,
+        dailyShortageMinutes: metrics.dailyShortageMinutes ?? 0,
+        dailyShortageHours: metrics.dailyShortageHours ?? 0,
+        officialStartTime: companySchedule.startTime || '09:00',
+        officialEndTime: companySchedule.endTime || '17:00',
+        totalWorkingHours: metrics.totalWorkingHours ?? 0,
+        verifyMethod: verifyMethod || 'fingerprint',
+        deviceId: chosenDevice?.id || 'dev-hq-main',
         deviceName: chosenDevice?.name || (isAr ? 'جهاز المقر الرئيسي' : 'HQ Terminal'),
         deviceLocation: chosenDevice?.location || (isAr ? 'المدخل الرئيسي' : 'Main Gate'),
+        isLateDeductionWaived: existingRec?.isLateDeductionWaived,
+        waivedBy: existingRec?.waivedBy,
+        waivedReason: existingRec?.waivedReason,
+        waivedAt: existingRec?.waivedAt,
         createdAt: existingRec?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -1230,12 +1246,16 @@ export default function App() {
         );
       }
 
-      await saveAttendanceRecord(newRecord);
+      try {
+        await saveAttendanceRecord(newRecord);
+      } catch (dbErr) {
+        console.warn('Firestore attendance save warning (local cache active):', dbErr);
+      }
 
       showToast(
         isAr
-          ? `تم رصد بصمة ${type === 'check_in' ? 'دخول' : 'خروج'} الموظف (${targetUser.name}) بنجاح`
-          : `Biometric ${type === 'check_in' ? 'check-in' : 'check-out'} logged for (${targetUser.name})`,
+          ? `تم رصد بصمة ${type === 'check_in' ? 'دخول' : 'خروج'} الموظف (${targetUser.name}) بنجاح (${timeNowStr})`
+          : `Biometric ${type === 'check_in' ? 'check-in' : 'check-out'} logged for (${targetUser.name}) at ${timeNowStr}`,
         'success'
       );
     } catch (error) {
@@ -1467,48 +1487,50 @@ export default function App() {
       )}
 
       {/* Sticky Top Header & Navigation Container */}
-      <div className="sticky top-0 z-40 bg-[#FAF9F6] border-b border-[#E5E2D9] shadow-xs">
-        <Header
-          currentUser={currentUser}
-          allUsers={users}
-          onSelectUser={handleSelectUser}
-          notifications={notifications}
-          onMarkNotificationAsRead={(id) => {
-            setNotifications((prev) => (Array.isArray(prev) ? prev.map((n) => (n.id === id ? { ...n, read: true } : n)) : []));
-            markNotificationAsReadInFirestore(id).catch((e) => console.warn(e));
-          }}
-          onMarkAllNotificationsAsRead={() => {
-            setNotifications((prev) => (Array.isArray(prev) ? prev.map((n) => ({ ...n, read: true })) : []));
-            const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
-            if (unreadIds.length > 0) {
-              markAllNotificationsAsReadInFirestore(unreadIds).catch((e) => console.warn(e));
-            }
-          }}
-          onNotificationClick={(notif) => {
-            if (notif.requestId || notif.type === 'request' || notif.type === 'approval') {
-              if (currentUser.role === 'manager' || currentUser.role === 'hr') {
-                setActiveTab('approvals');
-              } else {
-                setActiveTab('requests');
+      <div className="sticky top-0 z-50 bg-[#FAF9F6] border-b border-[#E5E2D9] shadow-xs">
+        <div className="relative z-30">
+          <Header
+            currentUser={currentUser}
+            allUsers={users}
+            onSelectUser={handleSelectUser}
+            notifications={notifications}
+            onMarkNotificationAsRead={(id) => {
+              setNotifications((prev) => (Array.isArray(prev) ? prev.map((n) => (n.id === id ? { ...n, read: true } : n)) : []));
+              markNotificationAsReadInFirestore(id).catch((e) => console.warn(e));
+            }}
+            onMarkAllNotificationsAsRead={() => {
+              setNotifications((prev) => (Array.isArray(prev) ? prev.map((n) => ({ ...n, read: true })) : []));
+              const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
+              if (unreadIds.length > 0) {
+                markAllNotificationsAsReadInFirestore(unreadIds).catch((e) => console.warn(e));
               }
-            } else if (notif.id.includes('sched') || notif.title.includes('دوام') || notif.titleEn?.includes('Schedule')) {
-              setActiveTab(currentUser.role === 'hr' || currentUser.role === 'manager' ? 'hr_schedule' : 'biometric');
-            }
-          }}
-          onClearNotifications={() => {
-            const ids = notifications.map((n) => n.id);
-            setNotifications([]);
-            if (ids.length > 0) {
-              clearAllNotificationsInFirestore(ids).catch((e) => console.warn(e));
-            }
-          }}
-          lang={lang}
-          onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
-          firebaseAuthUser={firebaseAuthUser}
-        />
+            }}
+            onNotificationClick={(notif) => {
+              if (notif.requestId || notif.type === 'request' || notif.type === 'approval') {
+                if (currentUser.role === 'manager' || currentUser.role === 'hr') {
+                  setActiveTab('approvals');
+                } else {
+                  setActiveTab('requests');
+                }
+              } else if (notif.id.includes('sched') || notif.title.includes('دوام') || notif.titleEn?.includes('Schedule')) {
+                setActiveTab(currentUser.role === 'hr' || currentUser.role === 'manager' ? 'hr_schedule' : 'biometric');
+              }
+            }}
+            onClearNotifications={() => {
+              const ids = notifications.map((n) => n.id);
+              setNotifications([]);
+              if (ids.length > 0) {
+                clearAllNotificationsInFirestore(ids).catch((e) => console.warn(e));
+              }
+            }}
+            lang={lang}
+            onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+            firebaseAuthUser={firebaseAuthUser}
+          />
+        </div>
 
         {/* Responsive Navigation Bar (Mobile, Tablet & Laptop Optimized) */}
-        <nav className="bg-[#FAF9F6]/95 border-t border-[#E5E2D9]/60 backdrop-blur-sm relative">
+        <nav className="relative z-10 bg-[#FAF9F6]/95 border-t border-[#E5E2D9]/60 backdrop-blur-sm">
           {/* 1. Mobile Quick Selector Bar (Visible on mobile/small screens) */}
           <div className="md:hidden flex items-center justify-between px-3.5 py-2 border-b border-[#E5E2D9]/50 bg-[#F5F2EB]">
             <button

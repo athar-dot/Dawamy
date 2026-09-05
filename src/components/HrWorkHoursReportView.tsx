@@ -26,6 +26,7 @@ import {
   FileSpreadsheet,
   X,
   Play,
+  AlertCircle,
 } from 'lucide-react';
 import {
   CompanyWorkSchedule,
@@ -873,10 +874,15 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
                           </div>
                         ) : isWeekendDay ? (
                           <span className="text-[#8C8A84]">-</span>
+                        ) : r.checkInTime && !r.checkOutTime ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-medium text-[11px] border border-amber-200">
+                            <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                            <span>{isAr ? 'دوام جارٍ' : 'In Progress'}</span>
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#E9EDD9] text-[#5E7153] font-bold text-[11px]">
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{isAr ? 'مكتمل' : '100%'}</span>
+                            <span>{isAr ? 'مكتمل (8س)' : '100%'}</span>
                           </span>
                         )}
                       </td>
@@ -895,21 +901,46 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
                           <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-[11px] font-medium">
                             {isAr ? 'إجازة رسمية' : 'On Leave'}
                           </span>
+                        ) : metrics.status === 'absent' ? (
+                          <span className="px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-200 text-[11px] font-bold">
+                            {isAr ? 'غياب' : 'Absent'}
+                          </span>
+                        ) : r.checkInTime && !r.checkOutTime ? (
+                          metrics.lateMinutes > 0 ? (
+                            <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold inline-flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-amber-600" />
+                              {isAr ? `على رأس العمل (تأخر ${metrics.lateMinutes} د)` : `On Duty (Late ${metrics.lateMinutes}m)`}
+                            </span>
+                          ) : metrics.status === 'missing_checkout' ? (
+                            <span className="px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 border border-stone-300 text-[11px] font-bold inline-flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-stone-500" />
+                              {isAr ? 'لم يسجل انصراف' : 'Missing Checkout'}
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold inline-flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-emerald-600 animate-pulse" />
+                              {isAr ? 'على رأس العمل (حضور في الموعد)' : 'On Duty (Clocked In)'}
+                            </span>
+                          )
                         ) : metrics.lateMinutes > 0 && metrics.earlyLeaveMinutes > 0 ? (
-                          <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold">
+                          <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold inline-flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-rose-600" />
                             {isAr ? 'تأخير وانصراف مبكر' : 'Late & Early'}
                           </span>
                         ) : metrics.lateMinutes > 0 ? (
-                          <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold">
-                            {isAr ? 'تأخير حضور' : 'Late Check-in'}
+                          <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold inline-flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            {isAr ? `تأخير حضور (${metrics.lateMinutes} د)` : `Late Check-in (${metrics.lateMinutes}m)`}
                           </span>
                         ) : metrics.earlyLeaveMinutes > 0 ? (
-                          <span className="px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-bold">
-                            {isAr ? 'انصراف مبكر' : 'Early Departure'}
+                          <span className="px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-bold inline-flex items-center gap-1">
+                            <TrendingDown className="w-3 h-3 text-orange-600" />
+                            {isAr ? `انصراف مبكر (${metrics.earlyLeaveMinutes} د)` : `Early Departure (${metrics.earlyLeaveMinutes}m)`}
                           </span>
                         ) : (
-                          <span className="px-2.5 py-1 rounded-full bg-[#E9EDD9] text-[#2D3628] text-[11px] font-bold">
-                            {isAr ? 'حاضر بالكامل' : 'Present'}
+                          <span className="px-2.5 py-1 rounded-full bg-[#E9EDD9] text-[#2D3628] text-[11px] font-bold inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-[#5E7153]" />
+                            {isAr ? 'دوام مكتمل (حاضر في الموعد)' : 'Full Shift (On Time)'}
                           </span>
                         )}
                       </td>

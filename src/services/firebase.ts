@@ -93,6 +93,29 @@ export async function testFirestoreConnection(): Promise<boolean> {
   }
 }
 
+/**
+ * Recursively cleans an object by stripping any undefined values,
+ * which Firestore rejects with 'Unsupported field value: undefined'.
+ */
+export function cleanFirestorePayload<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map((item) => cleanFirestorePayload(item)) as unknown as T;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data as Record<string, any>)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanFirestorePayload(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+}
+
 // ----------------------------------------------------
 // AUTHENTICATION SERVICES
 // ----------------------------------------------------
@@ -501,10 +524,11 @@ export function subscribeToAttendance(callback: (records: AttendanceRecord[]) =>
 export async function saveAttendanceRecord(record: AttendanceRecord): Promise<boolean> {
   try {
     const ref = doc(db, 'attendance', record.id);
-    await setDoc(ref, {
+    const payload = cleanFirestorePayload({
       ...record,
       updatedAt: new Date().toISOString(),
-    }, { merge: true });
+    });
+    await setDoc(ref, payload, { merge: true });
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `attendance/${record.id}`);
@@ -539,10 +563,11 @@ export function subscribeToBiometricDevices(callback: (devices: BiometricDeviceC
 export async function saveBiometricDevice(device: BiometricDeviceConfig): Promise<boolean> {
   try {
     const ref = doc(db, 'biometric_devices', device.id);
-    await setDoc(ref, {
+    const payload = cleanFirestorePayload({
       ...device,
       lastSyncTime: new Date().toISOString(),
-    }, { merge: true });
+    });
+    await setDoc(ref, payload, { merge: true });
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `biometric_devices/${device.id}`);
@@ -579,10 +604,11 @@ export function subscribeToDeductions(callback: (deductions: SalaryDeduction[]) 
 export async function saveSalaryDeduction(deduction: SalaryDeduction): Promise<boolean> {
   try {
     const ref = doc(db, 'deductions', deduction.id);
-    await setDoc(ref, {
+    const payload = cleanFirestorePayload({
       ...deduction,
       updatedAt: new Date().toISOString(),
-    }, { merge: true });
+    });
+    await setDoc(ref, payload, { merge: true });
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `deductions/${deduction.id}`);
