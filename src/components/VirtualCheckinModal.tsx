@@ -80,33 +80,35 @@ export const VirtualCheckinModal: React.FC<VirtualCheckinModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2D3628]/60 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-lg bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl p-6 sm:p-8 my-8 text-[#43423E] animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 bg-[#2D3628]/60 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl my-auto text-[#43423E] animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
         
-        {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#E5E2D9]">
+        {/* Header - Fixed */}
+        <div className="flex items-center justify-between p-5 sm:p-6 pb-4 border-b border-[#E5E2D9] shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-2xl bg-[#E9EDD9] text-[#2D3628] border border-[#D9E0D2]">
               <Clock className="w-5 h-5 text-[#5E7153]" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-[#2D3628]">
+              <h3 className="text-base sm:text-lg font-bold text-[#2D3628]">
                 {isAr ? 'تسجيل الحضور الافتراضي وتأكيد التواجد' : 'Virtual Attendance Check-In'}
               </h3>
-              <p className="text-xs text-[#65635E]">
+              <p className="text-[11px] sm:text-xs text-[#65635E]">
                 {isAr ? 'إثبات حضور ساعات العمل وبث حالتك لفريق العمل' : 'Log your core working hours & broadcast availability'}
               </p>
             </div>
           </div>
+
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#65635E] hover:text-[#2D3628] transition"
+            className="p-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#65635E] hover:text-[#2D3628] transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="mt-6 space-y-5">
+        {/* Scrollable Modal Content */}
+        <div className="p-5 sm:p-6 pt-4 space-y-5 overflow-y-auto">
           
           {/* Live digital clock card */}
           <div className="p-4 rounded-2xl bg-[#FAF9F6] border border-[#E5E2D9] text-center">

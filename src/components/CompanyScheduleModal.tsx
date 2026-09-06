@@ -165,10 +165,10 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#2D3628]/60 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-3xl bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl p-6 sm:p-8 my-6 text-[#43423E] animate-in fade-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#E5E2D9]">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 bg-[#2D3628]/60 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-3xl bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl my-auto text-[#43423E] animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+        {/* Header - Fixed */}
+        <div className="flex items-center justify-between p-6 sm:p-8 pb-4 border-b border-[#E5E2D9] shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-[#5E7153]/15 text-[#5E7153] flex items-center justify-center">
               <Clock className="w-6 h-6" />
@@ -194,14 +194,16 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
           </button>
         </div>
 
-        {errorMsg && (
-          <div className="mt-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
+        {/* Scrollable Form Body */}
+        <div className="p-6 sm:p-8 pt-4 overflow-y-auto">
+          {errorMsg && (
+            <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
           {/* Company Identity & Branding Section */}
           <div className="p-4 rounded-2xl bg-[#FAF9F6] border border-[#E5E2D9] space-y-4">
             <h4 className="text-xs font-extrabold text-[#2D3628] uppercase tracking-wider flex items-center gap-2">
@@ -341,7 +343,7 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
           <div>
             <label className="block text-xs font-bold text-[#2D3628] mb-2 flex items-center justify-between">
               <span>{isAr ? 'اختر نظام وساعات العمل المعتمد في الشركة:' : 'Select Company Shift Preset:'}</span>
-              <span className="text-[11px] font-normal text-[#65635E]">
+              <span className="text-[11px] font-semibold text-[#43423E]">
                 {isAr ? 'يمكنك التعديل أو التخصيص في أي وقت' : 'Can be customized anytime'}
               </span>
             </label>
@@ -371,7 +373,7 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
                       <div className="font-bold text-[#2D3628]">
                         {isAr ? preset.nameAr : preset.nameEn}
                       </div>
-                      <div className="text-[11px] text-[#65635E] mt-0.5 leading-relaxed">
+                      <div className="text-[11px] text-[#43423E] font-medium mt-0.5 leading-relaxed">
                         {isAr ? preset.descriptionAr : preset.descriptionEn}
                       </div>
                     </div>
@@ -439,7 +441,7 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
                 }}
                 className="w-full px-3 py-2.5 rounded-xl border border-[#E5E2D9] text-sm font-semibold bg-[#FAF9F6] text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
               />
-              <span className="text-[11px] text-[#65635E] mt-1 block">
+              <span className="text-[11px] text-[#43423E] font-medium mt-1 block">
                 {isAr ? 'يبدأ احتساب التأخير بعد هذا الوقت' : 'Late timer starts after this'}
               </span>
             </div>
@@ -458,7 +460,7 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
                 }}
                 className="w-full px-3 py-2.5 rounded-xl border border-[#E5E2D9] text-sm font-semibold bg-[#FAF9F6] text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
               />
-              <span className="text-[11px] text-[#65635E] mt-1 block">
+              <span className="text-[11px] text-[#43423E] font-medium mt-1 block">
                 {isAr ? 'الخروج قبل هذا الوقت يعد انصرافاً مبكراً' : 'Earlier punch is early leave'}
               </span>
             </div>
@@ -481,11 +483,11 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
                   }}
                   className="w-full px-3 py-2.5 rounded-xl border border-[#E5E2D9] text-sm font-semibold bg-[#FAF9F6] text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
                 />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#65635E]">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#2D3628]">
                   {isAr ? 'ساعات' : 'hrs'}
                 </span>
               </div>
-              <span className="text-[11px] text-[#65635E] mt-1 block">
+              <span className="text-[11px] text-[#43423E] font-medium mt-1 block">
                 {isAr ? `فارق التوقيت: ${spanHours} ساعة` : `Shift span: ${spanHours} hrs`}
               </span>
             </div>
@@ -645,6 +647,7 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

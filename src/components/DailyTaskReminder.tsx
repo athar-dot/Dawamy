@@ -621,17 +621,17 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
 
       {/* 5. Modal for Add / Edit Task with Due Times */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2D3628]/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl p-6 sm:p-8 my-8 text-[#43423E] space-y-5 animate-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 bg-[#2D3628]/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl my-auto text-[#43423E] animate-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
             
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-[#E5E2D9]">
+            {/* Modal Header - Fixed */}
+            <div className="flex items-center justify-between p-5 sm:p-6 pb-4 border-b border-[#E5E2D9] shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#5E7153] text-white flex items-center justify-center">
+                <div className="w-10 h-10 rounded-2xl bg-[#5E7153] text-white flex items-center justify-center shrink-0">
                   {editingTask ? <Edit3 className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-[#2D3628]">
+                  <h3 className="text-base sm:text-lg font-bold text-[#2D3628]">
                     {editingTask
                       ? isAr
                         ? 'تعديل المهمة وموعد التسليم'
@@ -640,7 +640,7 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
                       ? 'إضافة مهمة جديدة لليوم الحالي'
                       : 'Add New Daily Task'}
                   </h3>
-                  <p className="text-xs text-[#65635E]">
+                  <p className="text-[11px] sm:text-xs text-[#65635E]">
                     {isAr
                       ? 'حدد تفاصيل المهمة ووقت التسليم المستهدف للموظف'
                       : 'Specify milestone description and target delivery time'}
@@ -650,11 +650,14 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
 
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#65635E] hover:text-[#2D3628]"
+                className="p-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#65635E] hover:text-[#2D3628] transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Scrollable Modal Content */}
+            <div className="p-5 sm:p-6 pt-4 overflow-y-auto">
 
             {/* Form */}
             <form onSubmit={handleSaveTaskForm} className="space-y-4">
@@ -839,6 +842,7 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
 
             </form>
 
+          </div>
           </div>
         </div>
       )}

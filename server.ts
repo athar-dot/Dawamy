@@ -41,8 +41,8 @@ app.get('/api/health', (req, res) => {
 
 // 2. AI Reason Drafter for Remote Work / Leave Request
 app.post('/api/gemini/generate-reason', async (req, res) => {
+  const { type, keywords, tone, role, department, language = 'ar' } = req.body;
   try {
-    const { type, keywords, tone, role, department, language = 'ar' } = req.body;
     const ai = getGenAI();
 
     if (!ai) {
@@ -118,17 +118,26 @@ Output requirement: Exactly 1-2 clear, polished sentences ready to paste directl
     const generatedText = response.text ? response.text.trim() : '';
     res.json({ success: true, reason: generatedText });
   } catch (error: any) {
-    console.error('Error in /api/gemini/generate-reason:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate reason' });
+    console.error('Error in /api/gemini/generate-reason (falling back):', error?.message || error);
+    const templatesAr = [
+      `نظراً لحاجتي للتركيز المكثف على إنجاز المهام والتسليمات المجدولة دون مقاطعات، مع جاهزيتي التامة للتواصل وحضور كافة الاجتماعات الافتراضية.`,
+      `أرغب في العمل عن بعد لظروف شخصية طارئة مع التزامي الكامل بساعات العمل وإنجاز قائمة المهام المحددة.`,
+    ];
+    const templatesEn = [
+      `Requesting remote work today for deep focus on sprint deliverables without interruptions, while remaining fully available across Slack and email.`,
+      `Requesting to work from home today due to personal circumstances while maintaining full core hours availability.`,
+    ];
+    const chosen = language === 'en' ? templatesEn[0] : templatesAr[0];
+    res.json({ success: true, reason: chosen, fallback: true });
   }
 });
 
 // 3. AI HR Policy Advisor & FAQ Assistant
 app.post('/api/gemini/policy-advisor', async (req, res) => {
+  const { question, userContext, language = 'ar' } = req.body;
+  const isEn = language === 'en';
   try {
-    const { question, userContext, language = 'ar' } = req.body;
     const ai = getGenAI();
-    const isEn = language === 'en';
 
     if (!ai) {
       return res.json({
@@ -170,8 +179,14 @@ Answer politely, concisely, and helpfully in English with clear bullet points.`
 
     res.json({ success: true, answer: response.text ? response.text.trim() : '' });
   } catch (error: any) {
-    console.error('Error in /api/gemini/policy-advisor:', error);
-    res.status(500).json({ error: error.message || 'Failed to get policy advice' });
+    console.error('Error in /api/gemini/policy-advisor (falling back):', error?.message || error);
+    res.json({
+      success: true,
+      answer: isEn
+        ? `Company Hybrid Work Policy Summary:\n• Employees are eligible for up to 2 remote work days per week (8 days per month) with direct manager approval.\n• Daily standup plan and virtual check-in should be completed before 9:30 AM.\n• Manager approval is automatically logged with HR to ensure seamless attendance records.`
+        : `سياسة الشركة للعمل عن بعد والإجازات:\n• يُتاح للموظف يومين عمل عن بعد كحد أقصى أسبوعياً (أو 8 أيام شهرياً) بموافقة المدير المباشر.\n• يُشترط تقديم خطة المهام اليومية وتسجيل الحضور الافتراضي قبل الساعة 9:30 صباحاً.\n• رصيد الإجازات السنوية هو 25 يوماً في العام، وتتطلب الإجازة تقديم الطلب قبل 48 ساعة على الأقل.\n• الإجازة المرضية تستوجب إرفاق التقرير الطبي المعتمد خلال 24 ساعة.`,
+      fallback: true,
+    });
   }
 });
 

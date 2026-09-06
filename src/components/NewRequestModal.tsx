@@ -275,28 +275,20 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 bg-[#2D3628]/60 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl p-6 sm:p-8 my-auto text-[#43423E] animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-2 sm:p-6 bg-[#2D3628]/60 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-2xl bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl my-auto text-[#43423E] animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
         
-        {/* Error Notification */}
-        {formError && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{formError}</span>
-          </div>
-        )}
-
-        {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#E5E2D9]">
+        {/* Header - Fixed */}
+        <div className="flex items-center justify-between p-5 sm:p-6 pb-4 border-b border-[#E5E2D9] shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-2xl bg-[#E9EDD9] text-[#2D3628] border border-[#D9E0D2]">
               <Sparkles className="w-5 h-5 text-[#5E7153]" />
             </div>
             <div>
-              <h3 className="text-lg sm:text-xl font-bold text-[#2D3628]">
+              <h3 className="text-base sm:text-xl font-bold text-[#2D3628]">
                 {isAr ? 'تقديم طلب دوام عن بُعد أو إجازة' : 'Submit WFH or Leave Request'}
               </h3>
-              <p className="text-xs text-[#65635E]">
+              <p className="text-[11px] sm:text-xs text-[#65635E]">
                 {isAr
                   ? 'يخضع الطلب لنظام الحوكمة وضوابط منع التعارض الزمني وموافقة المدير والموارد البشرية'
                   : 'Automated conflict controls, quota validations, and multi-tier HR workflow'}
@@ -312,8 +304,18 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+        {/* Scrollable Form Body */}
+        <div className="p-5 sm:p-6 pt-4 overflow-y-auto">
+          {/* Error Notification */}
+          {formError && (
+            <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
           
           {/* 1. Request Type Selector */}
           <div>
@@ -725,9 +727,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               </span>
             </button>
           </div>
-
         </form>
-
+        </div>
       </div>
     </div>
   );

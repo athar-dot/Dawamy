@@ -464,8 +464,11 @@ export const Header: React.FC<HeaderProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#E9EDD9] hover:bg-[#D9E0D2] text-[#2D3628] border border-[#D9E0D2] text-xs font-bold transition shadow-xs cursor-pointer"
               >
                 <Building2 className="w-3.5 h-3.5 text-[#5E7153]" />
-                <span className="truncate max-w-[110px]">
+                <span className="hidden sm:inline-block">
                   {isAr ? 'شعار وبيانات الشركة' : 'Company Logo & Data'}
+                </span>
+                <span className="inline-block sm:hidden">
+                  {isAr ? 'الشركة' : 'Company'}
                 </span>
               </button>
             )}
