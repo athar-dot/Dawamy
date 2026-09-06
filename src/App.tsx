@@ -2017,6 +2017,7 @@ export default function App() {
             <ErrorBoundary sectionTitle={isAr ? 'المستشار الذكي لسياسات العمل' : 'AI Policy Advisor'}>
               <AiPolicyAdvisor
                 currentUser={currentUser}
+                companySchedule={companySchedule}
                 lang={lang}
               />
             </ErrorBoundary>

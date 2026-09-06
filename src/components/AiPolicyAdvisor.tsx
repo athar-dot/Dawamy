@@ -10,12 +10,13 @@ import {
   CheckCircle2,
   ChevronRight,
 } from 'lucide-react';
-import { UserProfile, PolicyFaqItem } from '../types';
+import { UserProfile, PolicyFaqItem, CompanyWorkSchedule } from '../types';
 import { POLICY_FAQS } from '../mockData';
 import { api } from '../services/api';
 
 interface AiPolicyAdvisorProps {
   currentUser: UserProfile;
+  companySchedule?: CompanyWorkSchedule;
   lang: 'ar' | 'en';
 }
 
@@ -28,16 +29,21 @@ interface ChatMessage {
 
 export const AiPolicyAdvisor: React.FC<AiPolicyAdvisorProps> = ({
   currentUser,
+  companySchedule,
   lang,
 }) => {
   const isAr = lang === 'ar';
+  const customPolicies = companySchedule?.generalPolicies;
+
+  const defaultWelcome = isAr
+    ? `مرحباً بك يا ${currentUser.name}! أنا مستشارك الذكي لسياسات العمل والإجازات في "${companySchedule?.companyName || 'دوامي'}". تم تحديث سياسات الشركة مؤخراً بواسطة الإدارة. كيف يمكنني مساعدتك في استفسارات لائحة العمل اليوم؟`
+    : `Hello ${currentUser.nameEn}! I am your AI HR Policy Advisor for ${companySchedule?.companyNameEn || companySchedule?.companyName || 'Dawamy'}. How can I assist you with company policies today?`;
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'msg-welcome',
       sender: 'ai',
-      text: isAr
-        ? `مرحباً بك يا ${currentUser.name}! أنا مستشارك الذكي لسياسات العمل عن بعد والإجازات في "دوامي". كيف يمكنني مساعدتك في استفسارات لائحة العمل والدوام المرن اليوم؟`
-        : `Hello ${currentUser.nameEn}! I am your AI HR Policy Advisor for Dawamy. How can I assist you with remote work guidelines and leave bylaws today?`,
+      text: defaultWelcome,
       time: 'الآن',
     },
   ]);
@@ -79,12 +85,14 @@ export const AiPolicyAdvisor: React.FC<AiPolicyAdvisorProps> = ({
 
       setMessages((prev) => [...prev, aiMsg]);
     } catch {
+      const fallbackText = isAr
+        ? `وفقاً للسياسات المعتمدة لـ "${companySchedule?.companyName || 'الشركة'}":\n• **العمل عن بعد**: ${customPolicies?.remoteWorkPolicy || 'يحق للموظف يومين أسبوعياً بموافقة المدير'}\n• **الإجازات**: ${customPolicies?.leavePolicy || 'حسب اللائحة الداخلية'}\n• **السلوك الوظيفي**: ${customPolicies?.codeOfConduct || 'الالتزام بالمهنية وسرية البيانات'}\n• **الساعات الإضافية**: ${customPolicies?.overtimePolicy || 'بموافقة مسبقة من الإدارة'}`
+        : `According to active policies for "${companySchedule?.companyNameEn || companySchedule?.companyName || 'the company'}":\n• Remote Work: ${customPolicies?.remoteWorkPolicy || 'Up to 2 days weekly upon manager approval'}\n• Leave Policy: ${customPolicies?.leavePolicy || 'Per internal bylaws'}\n• Code of Conduct: ${customPolicies?.codeOfConduct || 'Professionalism and confidentiality'}\n• Overtime: ${customPolicies?.overtimePolicy || 'Prior management approval required'}`;
+
       const fallbackMsg: ChatMessage = {
         id: `ai-err-${Date.now()}`,
         sender: 'ai',
-        text: isAr
-          ? 'وفقاً لسياسة دوامي المعتمدة: يحق للموظف يومين عمل عن بعد أسبوعياً بموافقة المدير، وتعتبر ساعات 10:00 ص - 4:00 م ساعات تواجد إلزامية.'
-          : 'According to company policy: up to 2 WFH days per week upon manager approval. Core hours: 10:00 AM - 4:00 PM.',
+        text: fallbackText,
         time: new Date().toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, fallbackMsg]);

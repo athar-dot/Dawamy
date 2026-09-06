@@ -56,6 +56,13 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
   const [checkInGraceMinutes, setCheckInGraceMinutes] = useState<number>(currentSchedule.checkInGraceMinutes ?? 15);
   const [checkOutGraceMinutes, setCheckOutGraceMinutes] = useState<number>(currentSchedule.checkOutGraceMinutes ?? 5);
   const [description, setDescription] = useState<string>(currentSchedule.description || '');
+
+  // General Company Policies (سياسات الشركة العامة)
+  const [remoteWorkPolicy, setRemoteWorkPolicy] = useState<string>(currentSchedule.generalPolicies?.remoteWorkPolicy || (isAr ? 'يحق للموظف يومين عمل عن بعد أسبوعياً بموافقة المدير، وتعتبر ساعات 10:00 ص - 4:00 م ساعات تواجد إلزامية.' : 'Up to 2 remote work days weekly upon manager approval. Core availability hours are 10:00 AM to 4:00 PM.'));
+  const [leavePolicy, setLeavePolicy] = useState<string>(currentSchedule.generalPolicies?.leavePolicy || (isAr ? 'تستحق إجازة سنوية بواقع 21-30 يوماً حسب اللائحة الداخلية، وتقديم طلب الإجازة قبلها بـ 3 أيام على الأقل.' : 'Annual leave of 21-30 days per internal bylaws, submitted at least 3 days in advance.'));
+  const [codeOfConduct, setCodeOfConduct] = useState<string>(currentSchedule.generalPolicies?.codeOfConduct || (isAr ? 'الالتزام بمواعيد العمل، المهنية العالية، الحفاظ على سرية بيانات العملاء والشركة، وتبادل الاحترام.' : 'Commitment to punctuality, high professionalism, data confidentiality, and mutual respect.'));
+  const [overtimePolicy, setOvertimePolicy] = useState<string>(currentSchedule.generalPolicies?.overtimePolicy || (isAr ? 'يتم احتساب ساعات العمل الإضافية بناءً على موافقة مسبقة من الإدارة وبنسبة تعويض حسب نظام العمل.' : 'Overtime hours are compensated upon prior management approval according to labor bylaws.'));
+
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -137,6 +144,12 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
         checkInGraceMinutes: Number(checkInGraceMinutes),
         checkOutGraceMinutes: Number(checkOutGraceMinutes),
         description: description.trim() || undefined,
+        generalPolicies: {
+          remoteWorkPolicy: remoteWorkPolicy.trim() || undefined,
+          leavePolicy: leavePolicy.trim() || undefined,
+          codeOfConduct: codeOfConduct.trim() || undefined,
+          overtimePolicy: overtimePolicy.trim() || undefined,
+        },
         updatedAt: new Date().toISOString(),
         updatedBy: 'مدير الموارد البشرية (HR)',
       };
@@ -532,6 +545,79 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
                   ? `يمكن الانصراف من ${formatMinutesToTime(endMins - checkOutGraceMinutes)} دون احتساب عجز`
                   : `Can leave from ${formatMinutesToTime(endMins - checkOutGraceMinutes)} without penalty`}
               </span>
+            </div>
+          </div>
+
+          {/* General Company Policies & Bylaws Section (سياسات الشركة العامة) */}
+          <div className="p-4 rounded-2xl bg-white border border-[#E5E2D9] space-y-4">
+            <div className="flex items-center gap-2 border-b border-[#E5E2D9] pb-3">
+              <Sparkles className="w-4 h-4 text-[#5E7153]" />
+              <div>
+                <h4 className="text-xs font-bold text-[#2D3628]">
+                  {isAr ? 'سياسات وقواعد الشركة العامة (تحديث مرن بواسطة المدير / الموارد البشرية)' : 'General Company Bylaws & Policies'}
+                </h4>
+                <p className="text-[11px] text-[#65635E]">
+                  {isAr ? 'هذه اللوائح تظهر فوراً للموظفين في المستشار الذكي والتقارير' : 'These policies reflect immediately for employees in the AI advisor and guidelines.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Remote Work */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'سياسة العمل عن بعد (Remote Work Policy)' : 'Remote Work Policy'}
+                </label>
+                <textarea
+                  rows={2}
+                  value={remoteWorkPolicy}
+                  onChange={(e) => setRemoteWorkPolicy(e.target.value)}
+                  placeholder={isAr ? 'مثال: يحق للموظف يومين عمل عن بعد أسبوعياً...' : 'e.g. Up to 2 remote work days...'}
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs bg-[#FAF9F6] text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              {/* Leave Policy */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'سياسة الإجازات والاستئذانات (Leave Bylaws)' : 'Leave & Vacation Policy'}
+                </label>
+                <textarea
+                  rows={2}
+                  value={leavePolicy}
+                  onChange={(e) => setLeavePolicy(e.target.value)}
+                  placeholder={isAr ? 'مثال: تستحق إجازة سنوية بواقع 21 يوماً...' : 'e.g. 21 days annual leave...'}
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs bg-[#FAF9F6] text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              {/* Code of Conduct */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'مدونة السلوك الوظيفي (Code of Conduct)' : 'Code of Conduct'}
+                </label>
+                <textarea
+                  rows={2}
+                  value={codeOfConduct}
+                  onChange={(e) => setCodeOfConduct(e.target.value)}
+                  placeholder={isAr ? 'مثال: الالتزام بالمهنية وسرية البيانات...' : 'e.g. Professionalism & data confidentiality...'}
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs bg-[#FAF9F6] text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              {/* Overtime Policy */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'سياسة الساعات الإضافية (Overtime Policy)' : 'Overtime Policy'}
+                </label>
+                <textarea
+                  rows={2}
+                  value={overtimePolicy}
+                  onChange={(e) => setOvertimePolicy(e.target.value)}
+                  placeholder={isAr ? 'مثال: باحتساب موافقة مسبقة للإدارة...' : 'e.g. Prior management approval required...'}
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs bg-[#FAF9F6] text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
             </div>
           </div>
 

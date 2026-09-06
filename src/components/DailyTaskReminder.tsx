@@ -680,12 +680,37 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
               </div>
 
               {/* Due Date & Time (تاريخ المهمة وزمنها) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#2D3628] mb-1.5 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-[#5E7153]" />
-                    {isAr ? 'تاريخ المهمة *' : 'Task Date *'}
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-[#2D3628] flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-[#5E7153]" />
+                      {isAr ? 'تاريخ المهمة *' : 'Task Date *'}
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = new Date().toISOString().split('T')[0];
+                          setFormDueDate(today);
+                        }}
+                        className="text-[10px] px-2 py-0.5 rounded bg-[#E9EDD9] text-[#2D3628] font-semibold hover:bg-[#D9E0D2] transition"
+                      >
+                        {isAr ? 'اليوم' : 'Today'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const tomorrow = new Date();
+                          tomorrow.setDate(tomorrow.getDate() + 1);
+                          setFormDueDate(tomorrow.toISOString().split('T')[0]);
+                        }}
+                        className="text-[10px] px-2 py-0.5 rounded bg-[#FAF9F6] border border-[#E5E2D9] text-[#65635E] font-semibold hover:bg-[#EFECE4] transition"
+                      >
+                        {isAr ? 'غداً' : 'Tomorrow'}
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="date"
                     id="input-task-due-date"
@@ -697,10 +722,13 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#2D3628] mb-1.5 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-[#5E7153]" />
-                    {isAr ? 'زمن الاستحقاق *' : 'Due Time *'}
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-[#2D3628] flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-[#5E7153]" />
+                      {isAr ? 'زمن الاستحقاق *' : 'Due Time *'}
+                    </label>
+                    <span className="text-[10px] text-[#65635E]">{isAr ? 'اختر من الأوقات السريعة أدناه' : 'Pick from presets'}</span>
+                  </div>
                   <input
                     type="text"
                     id="input-task-due-time"

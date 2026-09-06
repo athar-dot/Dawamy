@@ -53,6 +53,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [handoverColleague, setHandoverColleague] = useState(teamMembers[0]?.name || '');
   const [handoverPlan, setHandoverPlan] = useState('');
   const [medicalReportNumber, setMedicalReportNumber] = useState('');
+  const [medicalFileName, setMedicalFileName] = useState('');
   const [halfDayShift, setHalfDayShift] = useState<'morning' | 'afternoon'>('morning');
 
   // AI Generator state
@@ -248,8 +249,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     }
 
     const compiledReason =
-      type === 'sick_leave' && medicalReportNumber.trim()
-        ? `${reason.trim()} (رقم التقرير الطبي بصحتي: ${medicalReportNumber.trim()})`
+      type === 'sick_leave'
+        ? `${reason.trim()} ${medicalReportNumber.trim() ? `(رقم التقرير: ${medicalReportNumber.trim()})` : ''} ${medicalFileName ? `[مرفق طبي: ${medicalFileName}]` : ''}`.trim()
         : type === 'half_day'
         ? `${reason.trim()} [استئذان ${halfDayShift === 'morning' ? 'فترة صباحية' : 'فترة مسائية'}]`
         : reason.trim();
@@ -274,8 +275,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2D3628]/60 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl p-6 sm:p-8 my-8 text-[#43423E] animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 bg-[#2D3628]/60 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-2xl bg-white border border-[#E5E2D9] rounded-3xl shadow-2xl p-6 sm:p-8 my-auto text-[#43423E] animate-in fade-in zoom-in-95 duration-200">
         
         {/* Error Notification */}
         {formError && (
@@ -503,20 +504,58 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             </div>
           )}
 
-          {/* Extra field for Sick Leave: Medical Report */}
+          {/* Extra field for Sick Leave: Medical Report & Document Upload */}
           {type === 'sick_leave' && (
-            <div className="p-3.5 rounded-2xl bg-[#FAF9F6] border border-[#E5E2D9] space-y-2">
-              <label className="block text-xs font-semibold text-[#2D3628] flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-[#8C5A28]" />
-                {isAr ? 'رقم الإجازة المرضية المعتمدة بتطبيق صحتي (اختياري):' : 'Sehhaty Medical Report ID (Optional):'}
-              </label>
-              <input
-                type="text"
-                value={medicalReportNumber}
-                onChange={(e) => setMedicalReportNumber(e.target.value)}
-                placeholder={isAr ? 'مثال: SEH-2026-88914' : 'e.g. SEH-2026-88914'}
-                className="w-full px-3 py-2 bg-white border border-[#E5E2D9] rounded-xl text-xs text-[#43423E] placeholder-[#9A9890] focus:outline-none focus:border-[#5E7153]"
-              />
+            <div className="p-4 rounded-2xl bg-[#FAF9F6] border border-[#E5E2D9] space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-[#2D3628] flex items-center gap-1.5 mb-1">
+                  <FileText className="w-3.5 h-3.5 text-[#8C5A28]" />
+                  {isAr ? 'رقم الإجازة المرضية المعتمدة بتطبيق صحتي:' : 'Sehhaty Medical Report ID:'}
+                </label>
+                <input
+                  type="text"
+                  value={medicalReportNumber}
+                  onChange={(e) => setMedicalReportNumber(e.target.value)}
+                  placeholder={isAr ? 'مثال: SEH-2026-88914' : 'e.g. SEH-2026-88914'}
+                  className="w-full px-3 py-2 bg-white border border-[#E5E2D9] rounded-xl text-xs text-[#43423E] placeholder-[#9A9890] focus:outline-none focus:border-[#5E7153]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#2D3628] flex items-center gap-1.5 mb-1">
+                  <Stethoscope className="w-3.5 h-3.5 text-[#5E7153]" />
+                  {isAr ? 'رفع وثيقة التقرير الطبي أو الإجازة المرضية (صورة أو PDF):' : 'Upload Medical Certificate / Rest Note (Image or PDF):'}
+                </label>
+                <div className="flex items-center gap-3">
+                  <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-dashed border-[#5E7153]/50 hover:border-[#5E7153] rounded-xl text-xs text-[#2D3628] font-medium cursor-pointer transition hover:bg-[#E9EDD9]/20">
+                    <FileText className="w-4 h-4 text-[#5E7153]" />
+                    <span>{medicalFileName || (isAr ? 'اختر ملف الوثيقة المرضية...' : 'Choose medical document file...')}</span>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setMedicalFileName(file.name);
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                  {medicalFileName && (
+                    <button
+                      type="button"
+                      onClick={() => setMedicalFileName('')}
+                      className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2 py-1"
+                    >
+                      {isAr ? 'إزالة' : 'Remove'}
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-[#65635E] mt-1">
+                  {isAr ? 'يتم إرفاق الوثيقة فوراً مع الطلب ليعتمدها الطبيب المسؤول والموارد البشرية.' : 'Document is attached to the request for HR & medical review.'}
+                </p>
+              </div>
             </div>
           )}
 

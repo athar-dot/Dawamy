@@ -193,6 +193,12 @@ export interface CompanyWorkSchedule {
   descriptionEn?: string;
   updatedAt?: string;
   updatedBy?: string;
+  generalPolicies?: {
+    remoteWorkPolicy?: string;
+    leavePolicy?: string;
+    codeOfConduct?: string;
+    overtimePolicy?: string;
+  };
 }
 
 export interface AttendanceRecord {
