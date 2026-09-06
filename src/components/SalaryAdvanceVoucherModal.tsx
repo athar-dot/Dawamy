@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Building2,
   Printer,
@@ -10,9 +10,11 @@ import {
   DollarSign,
   FileText,
   UserCheck,
+  Loader2,
 } from 'lucide-react';
 import { SalaryAdvance, UserProfile } from '../types';
 import { formatSalaryCurrency } from '../utils/payrollUtils';
+import { printHtmlDocument, exportElementToPdf } from '../utils/printUtils';
 
 interface SalaryAdvanceVoucherModalProps {
   isOpen: boolean;
@@ -32,14 +34,60 @@ export const SalaryAdvanceVoucherModal: React.FC<SalaryAdvanceVoucherModalProps>
   lang,
 }) => {
   const isAr = lang === 'ar';
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const voucherRef = useRef<HTMLDivElement>(null);
 
   if (!isOpen || !advance) return null;
 
-  const handlePrint = () => {
+  const [companyName, setCompanyName] = useState('شركة دوامي للتقنية');
+  const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
+  const [commercialRegNo, setCommercialRegNo] = useState('');
+  const [taxNumber, setTaxNumber] = useState('');
+  const [companyAddress, setCompanyAddress] = useState('المملكة العربية السعودية • الرياض');
+
+  React.useEffect(() => {
     try {
-      window.print();
+      const saved = localStorage.getItem('dawamy_company_schedule');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.companyName) setCompanyName(parsed.companyName);
+        if (parsed.logoUrl) setLogoUrl(parsed.logoUrl);
+        if (parsed.commercialRegNo) setCommercialRegNo(parsed.commercialRegNo);
+        if (parsed.taxNumber) setTaxNumber(parsed.taxNumber);
+        if (parsed.companyAddress) setCompanyAddress(parsed.companyAddress);
+      }
     } catch (e) {
-      console.warn('Print not supported:', e);
+      console.warn(e);
+    }
+  }, []);
+
+  const handlePrint = () => {
+    const el = voucherRef.current || document.getElementById('salary-advance-printable-voucher');
+    if (el) {
+      printHtmlDocument({
+        title: `سند صرف سلفة ${advance.userName} - ${advance.advanceNumber}`,
+        contentHtml: el.innerHTML,
+        landscape: false,
+      });
+    } else {
+      window.print();
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!voucherRef.current || isExportingPdf) return;
+    setIsExportingPdf(true);
+    try {
+      const sanitizedName = (advance.userName || 'employee').replace(/[\s/\\?%*:|"<>]/g, '_');
+      await exportElementToPdf({
+        element: voucherRef.current,
+        fileName: `سند_سلفة_${sanitizedName}_${advance.advanceNumber}.pdf`,
+        landscape: false,
+      });
+    } catch (err) {
+      console.error('PDF export error:', err);
+    } finally {
+      setIsExportingPdf(false);
     }
   };
 
@@ -48,11 +96,11 @@ export const SalaryAdvanceVoucherModal: React.FC<SalaryAdvanceVoucherModalProps>
   const approverSig = advance.approverSignature || currentUser?.signatureDataUrl;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-2xl w-full p-6 sm:p-8 border border-[#E5E2D9] shadow-2xl space-y-6 text-right my-auto">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in overflow-y-auto">
+      <div className="bg-white rounded-2xl max-w-2xl w-full p-5 sm:p-7 border border-[#E5E2D9] shadow-2xl space-y-5 text-right my-auto">
         
         {/* Modal Top Actions (Hidden in Print) */}
-        <div className="flex items-center justify-between pb-3 border-b border-[#E5E2D9] print:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E5E2D9] print:hidden">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-1 rounded-md bg-[#5E7153]/15 text-[#5E7153] font-bold text-xs">
               {advance.advanceNumber}
@@ -63,15 +111,30 @@ export const SalaryAdvanceVoucherModal: React.FC<SalaryAdvanceVoucherModalProps>
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={handleExportPdf}
+              disabled={isExportingPdf}
+              className="px-3.5 py-1.5 rounded-xl bg-white border border-[#D9E0D2] text-[#2D3628] hover:bg-[#FAF9F6] text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+              title={isAr ? 'حفظ السند كملف PDF' : 'Save as PDF'}
+            >
+              {isExportingPdf ? (
+                <Loader2 className="w-4 h-4 animate-spin text-[#5E7153]" />
+              ) : (
+                <Download className="w-4 h-4 text-[#5E7153]" />
+              )}
+              <span>{isExportingPdf ? (isAr ? 'جاري الإنشاء...' : 'Exporting...') : isAr ? 'تصدير PDF' : 'Export PDF'}</span>
+            </button>
+
+            <button
               onClick={handlePrint}
-              className="px-4 py-1.5 rounded-xl bg-[#5E7153] hover:bg-[#4B5B42] text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition"
+              className="px-3.5 py-1.5 rounded-xl bg-[#5E7153] hover:bg-[#4B5B42] text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition"
             >
               <Printer className="w-4 h-4" />
               <span>{isAr ? 'طباعة السند' : 'Print Voucher'}</span>
             </button>
+
             <button
               onClick={onClose}
-              className="p-1 rounded-lg text-[#8C887B] hover:text-[#2D3628] hover:bg-[#FAF9F6] transition"
+              className="p-1 rounded-lg text-[#8C887B] hover:text-[#2D3628] hover:bg-[#FAF9F6] transition cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -79,23 +142,38 @@ export const SalaryAdvanceVoucherModal: React.FC<SalaryAdvanceVoucherModalProps>
         </div>
 
         {/* Printable Official Document Container */}
-        <div id="salary-advance-printable-voucher" className="space-y-6 bg-white p-2">
+        <div
+          ref={voucherRef}
+          id="salary-advance-printable-voucher"
+          className="space-y-6 bg-white p-3 rounded-xl border border-[#E5E2D9]"
+          style={{ backgroundColor: '#FFFFFF' }}
+        >
           
           {/* Document Official Header */}
           <div className="flex items-start justify-between border-b-2 border-[#5E7153] pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-[#5E7153] text-white flex items-center justify-center font-bold shadow-sm">
-                <Building2 className="w-7 h-7" />
-              </div>
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="Company Logo"
+                  className="w-12 h-12 object-contain rounded-xl border border-[#E5E2D9] bg-white p-1"
+                  crossOrigin="anonymous"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-xl bg-[#5E7153] text-white flex items-center justify-center font-bold shadow-sm">
+                  <Building2 className="w-7 h-7" />
+                </div>
+              )}
               <div>
                 <h2 className="text-lg sm:text-xl font-extrabold text-[#2D3628]">
-                  {isAr ? 'شركة التقنية والحلول الذكية' : 'Tech & Smart Solutions Co.'}
+                  {companyName}
                 </h2>
-                <p className="text-xs text-[#5E7153] font-bold">
-                  {isAr ? 'منظومة دوامي • إدارة الموارد البشرية والمالية' : 'Dawamy HR & Finance Division'}
-                </p>
-                <p className="text-[10px] text-[#8C887B]">
-                  {isAr ? 'المملكة العربية السعودية • الرياض' : 'Riyadh, Saudi Arabia'}
+                <div className="flex items-center gap-2 text-[10px] text-[#65635E] mt-0.5">
+                  {commercialRegNo && <span>{isAr ? 'س.ت:' : 'C.R:'} {commercialRegNo}</span>}
+                  {taxNumber && <span>{isAr ? 'ر.ض:' : 'Tax:'} {taxNumber}</span>}
+                </div>
+                <p className="text-[10px] text-[#8C887B] mt-0.5">
+                  {companyAddress}
                 </p>
               </div>
             </div>
@@ -296,6 +374,31 @@ export const SalaryAdvanceVoucherModal: React.FC<SalaryAdvanceVoucherModalProps>
               : 'Official voucher generated via Dawamy HR Platform • Valid and legally binding'}
           </div>
 
+        </div>
+
+        {/* Modal Bottom Actions (Hidden in Print) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#E5E2D9] print:hidden">
+          <div className="text-xs text-[#8C887B]">
+            {isAr ? 'سند معتمد بالبصمات والتواقيع الرقمية' : 'Digitally Signed Voucher'}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-[#EFECE4] hover:bg-[#E5E2D9] text-[#2D3628] font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <X className="w-4 h-4 text-[#8C887B]" />
+              <span>{isAr ? 'إغلاق ومغادرة' : 'Close'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-4 py-2 rounded-xl bg-[#5E7153] hover:bg-[#4B5B42] text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition"
+            >
+              <Printer className="w-4 h-4" />
+              <span>{isAr ? 'طباعة السند' : 'Print Voucher'}</span>
+            </button>
+          </div>
         </div>
 
       </div>

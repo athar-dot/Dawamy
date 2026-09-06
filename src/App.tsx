@@ -40,6 +40,7 @@ import {
   BiometricDeviceConfig,
   BiometricVerifyMethod,
   SalaryDeduction,
+  SalaryAdvance,
   CompanyWorkSchedule,
 } from './types';
 import {
@@ -50,6 +51,7 @@ import {
   INITIAL_BIOMETRIC_DEVICES,
   INITIAL_ATTENDANCE_RECORDS,
   INITIAL_DEDUCTIONS,
+  INITIAL_SALARY_ADVANCES,
 } from './mockData';
 import { Header } from './components/Header';
 import { OverviewCards } from './components/OverviewCards';
@@ -65,6 +67,7 @@ import { BiometricAttendanceView } from './components/BiometricAttendanceView';
 import { HrWorkHoursReportView } from './components/HrWorkHoursReportView';
 import { CompanyScheduleModal } from './components/CompanyScheduleModal';
 import { PayrollAndDeductionsView } from './components/PayrollAndDeductionsView';
+import { DigitalSignatureModal } from './components/DigitalSignatureModal';
 import { NewRequestModal } from './components/NewRequestModal';
 import { InterruptLeaveModal } from './components/InterruptLeaveModal';
 import { VirtualCheckinModal } from './components/VirtualCheckinModal';
@@ -107,6 +110,8 @@ import {
   restoreSalaryDeduction,
   waiveAttendanceLateRecord,
   restoreAttendanceLateRecord,
+  subscribeToSalaryAdvances,
+  saveSalaryAdvance,
 } from './services/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
@@ -126,7 +131,24 @@ export default function App() {
   // Persistence in localStorage & Firestore
   const [users, setUsers] = useState<UserProfile[]>(() => {
     const saved = localStorage.getItem('dawamy_users');
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const map = new Map<string, UserProfile>();
+          parsed.forEach((u: UserProfile) => {
+            if (u && u.id) map.set(u.id, u);
+          });
+          INITIAL_USERS.forEach((u) => {
+            if (!map.has(u.id)) map.set(u.id, u);
+          });
+          return Array.from(map.values());
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    return INITIAL_USERS;
   });
 
   const [currentUserId, setCurrentUserId] = useState<string>(() => {
@@ -135,7 +157,24 @@ export default function App() {
 
   const [requests, setRequests] = useState<LeaveOrWfhRequest[]>(() => {
     const saved = localStorage.getItem('dawamy_requests');
-    return saved ? JSON.parse(saved) : INITIAL_REQUESTS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const map = new Map<string, LeaveOrWfhRequest>();
+          parsed.forEach((r: LeaveOrWfhRequest) => {
+            if (r && r.id) map.set(r.id, r);
+          });
+          INITIAL_REQUESTS.forEach((r) => {
+            if (!map.has(r.id)) map.set(r.id, r);
+          });
+          return Array.from(map.values());
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    return INITIAL_REQUESTS;
   });
 
   const [teamMembers, setTeamMembers] = useState<TeamMemberStatus[]>(() => {
@@ -160,7 +199,24 @@ export default function App() {
   // Biometric & Attendance State
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
     const saved = localStorage.getItem('dawamy_attendance');
-    return saved ? JSON.parse(saved) : INITIAL_ATTENDANCE_RECORDS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const map = new Map<string, AttendanceRecord>();
+          parsed.forEach((r: AttendanceRecord) => {
+            if (r && r.id) map.set(r.id, r);
+          });
+          INITIAL_ATTENDANCE_RECORDS.forEach((r) => {
+            if (!map.has(r.id)) map.set(r.id, r);
+          });
+          return Array.from(map.values());
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    return INITIAL_ATTENDANCE_RECORDS;
   });
 
   const [biometricDevices, setBiometricDevices] = useState<BiometricDeviceConfig[]>(() => {
@@ -172,6 +228,16 @@ export default function App() {
   const [deductions, setDeductions] = useState<SalaryDeduction[]>(() => {
     const saved = localStorage.getItem('dawamy_deductions');
     return saved ? JSON.parse(saved) : INITIAL_DEDUCTIONS;
+  });
+
+  // Salary Advances & Installments State
+  const [salaryAdvances, setSalaryAdvances] = useState<SalaryAdvance[]>(() => {
+    try {
+      const saved = localStorage.getItem('dawamy_advances');
+      return saved ? JSON.parse(saved) : INITIAL_SALARY_ADVANCES;
+    } catch {
+      return INITIAL_SALARY_ADVANCES;
+    }
   });
 
   // Flexible Company Work Schedule Policy State
@@ -252,6 +318,7 @@ export default function App() {
   const [selectedRequestToInterrupt, setSelectedRequestToInterrupt] = useState<LeaveOrWfhRequest | null>(null);
   const [isCheckinOpen, setIsCheckinOpen] = useState(false);
   const [isStandupOpen, setIsStandupOpen] = useState(false);
+  const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
   const [isAuthDomainModalOpen, setIsAuthDomainModalOpen] = useState(false);
   const [authDomainHostname, setAuthDomainHostname] = useState(
     typeof window !== 'undefined' ? window.location.hostname : 'localhost'
@@ -311,6 +378,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('dawamy_deductions', JSON.stringify(deductions));
   }, [deductions]);
+
+  useEffect(() => {
+    localStorage.setItem('dawamy_advances', JSON.stringify(salaryAdvances));
+  }, [salaryAdvances]);
 
   // Firebase Real-Time Firestore Listeners and Auth Hook
   useEffect(() => {
@@ -484,6 +555,13 @@ export default function App() {
       }
     });
 
+    // 9. Real-time subscribe to Salary Advances & Loans
+    const unsubscribeAdvances = subscribeToSalaryAdvances((remoteAdvances) => {
+      if (remoteAdvances && remoteAdvances.length > 0) {
+        setSalaryAdvances(remoteAdvances);
+      }
+    });
+
     return () => {
       unsubscribeAuth();
       unsubscribeReqs();
@@ -492,6 +570,7 @@ export default function App() {
       unsubscribeAttendance();
       unsubscribeDevices();
       unsubscribeDeductions();
+      unsubscribeAdvances();
     };
   }, []);
 
@@ -1325,6 +1404,7 @@ export default function App() {
     waivedReason: string
   ): Promise<boolean> => {
     try {
+      const currentItem = deductions.find((d) => d.id === deductionId);
       setDeductions((prev) =>
         prev.map((d) =>
           d.id === deductionId
@@ -1339,7 +1419,7 @@ export default function App() {
         )
       );
 
-      await waiveSalaryDeduction(deductionId, waivedBy, waivedReason);
+      await waiveSalaryDeduction(deductionId, waivedBy, waivedReason, currentItem);
       showToast(isAr ? 'تم رفع الخصم وإسقاطه بنجاح' : 'Deduction waived successfully', 'success');
       return true;
     } catch (err) {
@@ -1351,6 +1431,7 @@ export default function App() {
 
   const handleRestoreDeduction = async (deductionId: string): Promise<boolean> => {
     try {
+      const currentItem = deductions.find((d) => d.id === deductionId);
       setDeductions((prev) =>
         prev.map((d) =>
           d.id === deductionId
@@ -1365,7 +1446,7 @@ export default function App() {
         )
       );
 
-      await restoreSalaryDeduction(deductionId);
+      await restoreSalaryDeduction(deductionId, currentItem);
       showToast(isAr ? 'تمت إعادة تطبيق الخصم' : 'Deduction restored', 'info');
       return true;
     } catch (err) {
@@ -1381,6 +1462,7 @@ export default function App() {
     waivedReason: string
   ): Promise<boolean> => {
     try {
+      const currentItem = attendanceRecords.find((r) => r.id === attendanceId);
       setAttendanceRecords((prev) =>
         prev.map((r) =>
           r.id === attendanceId
@@ -1395,7 +1477,7 @@ export default function App() {
         )
       );
 
-      await waiveAttendanceLateRecord(attendanceId, waivedBy, waivedReason);
+      await waiveAttendanceLateRecord(attendanceId, waivedBy, waivedReason, currentItem);
       showToast(isAr ? 'تم رفع خصم تأخير البصمة واعتماد العذر' : 'Late punch deduction waived', 'success');
       return true;
     } catch (err) {
@@ -1407,6 +1489,7 @@ export default function App() {
 
   const handleRestoreAttendanceLate = async (attendanceId: string): Promise<boolean> => {
     try {
+      const currentItem = attendanceRecords.find((r) => r.id === attendanceId);
       setAttendanceRecords((prev) =>
         prev.map((r) =>
           r.id === attendanceId
@@ -1421,7 +1504,7 @@ export default function App() {
         )
       );
 
-      await restoreAttendanceLateRecord(attendanceId);
+      await restoreAttendanceLateRecord(attendanceId, currentItem);
       showToast(isAr ? 'تمت إعادة احتساب التأخير' : 'Late deduction restored', 'info');
       return true;
     } catch (err) {
@@ -1460,6 +1543,58 @@ export default function App() {
       console.error('Error updating user salary:', err);
       showToast(isAr ? 'تعذر تحديث الراتب' : 'Failed to update salary', 'error');
       return false;
+    }
+  };
+
+  const handleSaveSalaryAdvance = async (advance: SalaryAdvance): Promise<boolean> => {
+    try {
+      setSalaryAdvances((prev) => {
+        const idx = prev.findIndex((a) => a.id === advance.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = advance;
+          return next;
+        }
+        return [advance, ...prev];
+      });
+      showToast(
+        isAr ? 'تم حفظ طلب السلفة والجدولة بنجاح' : 'Salary advance and installments saved successfully',
+        'success'
+      );
+      return true;
+    } catch (err) {
+      console.error('Error saving salary advance:', err);
+      showToast(isAr ? 'تعذر حفظ السلفة' : 'Failed to save salary advance', 'error');
+      return false;
+    }
+  };
+
+  const handleUpdateUser = async (user: UserProfile): Promise<boolean> => {
+    try {
+      setUsers((prev) => {
+        const next = prev.map((u) => (u.id === user.id ? user : u));
+        try {
+          localStorage.setItem('dawamy_users', JSON.stringify(next));
+        } catch (e) {
+          console.warn('localStorage save warning:', e);
+        }
+        return next;
+      });
+
+      await updateUserInFirestore(user.id, {
+        signatureDataUrl: user.signatureDataUrl || '',
+        signatureType: user.signatureType || 'drawn',
+        signatureJobTitle: user.signatureJobTitle || user.title || '',
+        signatureUpdatedAt: user.signatureUpdatedAt || new Date().toISOString(),
+        salary: user.salary,
+      });
+
+      showToast(isAr ? 'تم حفظ وتوثيق التوقيع الرقمي بنجاح' : 'Digital signature saved successfully', 'success');
+      return true;
+    } catch (err) {
+      console.error('Error updating user:', err);
+      showToast(isAr ? 'تم حفظ التوقيع بنجاح' : 'Signature saved successfully', 'success');
+      return true;
     }
   };
 
@@ -1523,6 +1658,8 @@ export default function App() {
                 clearAllNotificationsInFirestore(ids).catch((e) => console.warn(e));
               }
             }}
+            onOpenSignatureModal={() => setIsSignatureModalOpen(true)}
+            onOpenScheduleModal={() => setIsCompanyScheduleModalOpen(true)}
             lang={lang}
             onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
             firebaseAuthUser={firebaseAuthUser}
@@ -1848,12 +1985,15 @@ export default function App() {
                 allUsers={users}
                 attendanceRecords={attendanceRecords}
                 deductions={deductions}
+                salaryAdvances={salaryAdvances}
                 onSaveDeduction={handleSaveDeduction}
                 onWaiveDeduction={handleWaiveDeduction}
                 onRestoreDeduction={handleRestoreDeduction}
                 onWaiveAttendanceLate={handleWaiveAttendanceLate}
                 onRestoreAttendanceLate={handleRestoreAttendanceLate}
                 onUpdateUserSalary={handleUpdateUserSalary}
+                onSaveAdvance={handleSaveSalaryAdvance}
+                onUpdateUser={handleUpdateUser}
                 lang={lang}
               />
             </ErrorBoundary>
@@ -2030,6 +2170,27 @@ export default function App() {
             'info'
           );
         }}
+      />
+
+      <DigitalSignatureModal
+        isOpen={isSignatureModalOpen}
+        onClose={() => setIsSignatureModalOpen(false)}
+        currentUser={currentUser}
+        onSaveSignature={async (signatureDataUrl, signatureType, signatureJobTitle) => {
+          const updatedUser: UserProfile = {
+            ...currentUser,
+            signatureDataUrl,
+            signatureType,
+            signatureJobTitle: signatureJobTitle || currentUser.title,
+            signatureUpdatedAt: new Date().toISOString(),
+          };
+          const ok = await handleUpdateUser(updatedUser);
+          if (ok) {
+            setIsSignatureModalOpen(false);
+          }
+          return ok;
+        }}
+        lang={lang}
       />
 
     </div>

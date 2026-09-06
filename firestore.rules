@@ -69,5 +69,12 @@ service cloud.firestore {
       allow create, update: if true;
       allow delete: if true;
     }
+
+    // Salary advances, loans and installments
+    match /advances/{advanceId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
   }
 }

@@ -74,6 +74,8 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
 
   // State: Scope Filter ('all' vs single employee ID)
   const [reportScope, setReportScope] = useState<'all' | 'single'>('all');
+  const [timeMode, setTimeMode] = useState<'daily' | 'monthly'>('daily');
+  const [selectedDate, setSelectedDate] = useState<string>('2026-09-03');
   const [selectedUserId, setSelectedUserId] = useState<string>(allUsers[0]?.id || '');
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
   const [searchTerm, setSearchTerm] = useState('');
@@ -91,6 +93,25 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
   const [punchDate, setPunchDate] = useState('2026-09-04');
   const [isPunchSubmitting, setIsPunchSubmitting] = useState(false);
 
+  // Date Navigation Helpers
+  const handlePrevDay = () => {
+    const [y, m, d] = selectedDate.split('-').map(Number);
+    const date = new Date(y, m - 1, d - 1);
+    const yStr = date.getFullYear();
+    const mStr = String(date.getMonth() + 1).padStart(2, '0');
+    const dStr = String(date.getDate()).padStart(2, '0');
+    setSelectedDate(`${yStr}-${mStr}-${dStr}`);
+  };
+
+  const handleNextDay = () => {
+    const [y, m, d] = selectedDate.split('-').map(Number);
+    const date = new Date(y, m - 1, d + 1);
+    const yStr = date.getFullYear();
+    const mStr = String(date.getMonth() + 1).padStart(2, '0');
+    const dStr = String(date.getDate()).padStart(2, '0');
+    setSelectedDate(`${yStr}-${mStr}-${dStr}`);
+  };
+
   // Selected User Profile
   const activeUser = useMemo(() => {
     return allUsers.find((u) => u.id === selectedUserId) || allUsers[0] || currentUser;
@@ -101,33 +122,75 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
     return Array.from(new Set(allUsers.map((u) => u.department).filter(Boolean)));
   }, [allUsers]);
 
-  // Filtered Records based on Month, Scope, Department, Search, and Delay
+  // Filtered Records based on Scope, TimeMode, Selected Date/Month, Department, Search, and Delay
   const filteredRecords = useMemo(() => {
-    let recs = (attendanceRecords || []).filter((r) => {
-      if (!r || !r.date) return false;
-      // Month Filter
-      if (selectedMonth && !r.date.startsWith(selectedMonth)) return false;
+    let recs: AttendanceRecord[] = [];
 
-      // Scope Filter (All vs Single User)
-      if (reportScope === 'single' && r.userId !== activeUser.id) return false;
+    if (reportScope === 'all' && timeMode === 'daily') {
+      // DAILY VIEW FOR ALL EMPLOYEES:
+      // Map over all company employees for the selected specific date
+      recs = allUsers.map((u) => {
+        const found = (attendanceRecords || []).find(
+          (r) => r.userId === u.id && r.date === selectedDate
+        );
+        if (found) return found;
 
-      // Department Filter
-      if (departmentFilter !== 'all' && r.department !== departmentFilter) return false;
+        // If no punch record exists for this employee on this date, synthesize clean day record
+        return {
+          id: `synth-${u.id}-${selectedDate}`,
+          userId: u.id,
+          userName: u.name,
+          userNameEn: u.nameEn,
+          userEmail: u.email,
+          department: u.department,
+          departmentEn: u.departmentEn,
+          biometricEnrollId: u.biometricEnrollId,
+          date: selectedDate,
+          status: 'absent' as const,
+          lateMinutes: 0,
+          earlyLeaveMinutes: 0,
+          dailyRequiredHours: companySchedule.dailyWorkHours,
+          dailyShortageMinutes: companySchedule.dailyWorkHours * 60,
+          dailyShortageHours: companySchedule.dailyWorkHours,
+          officialStartTime: companySchedule.startTime,
+          officialEndTime: companySchedule.endTime,
+          totalWorkingHours: 0,
+        };
+      });
+    } else if (reportScope === 'all' && timeMode === 'monthly') {
+      // MONTHLY VIEW FOR ALL EMPLOYEES:
+      recs = (attendanceRecords || []).filter((r) => {
+        if (!r || !r.date) return false;
+        return selectedMonth ? r.date.startsWith(selectedMonth) : true;
+      });
+    } else {
+      // SINGLE EMPLOYEE VIEW:
+      recs = (attendanceRecords || []).filter((r) => {
+        if (!r || !r.date) return false;
+        if (r.userId !== activeUser.id) return false;
+        if (timeMode === 'daily') return r.date === selectedDate;
+        return selectedMonth ? r.date.startsWith(selectedMonth) : true;
+      });
+    }
 
-      // Search Query
-      if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase().trim();
+    // Department Filter
+    if (departmentFilter !== 'all') {
+      recs = recs.filter((r) => r.department === departmentFilter);
+    }
+
+    // Search Query
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase().trim();
+      recs = recs.filter((r) => {
         const matchesName = (r.userName || '').toLowerCase().includes(q);
         const matchesEnroll = (r.biometricEnrollId || '').includes(q);
         const matchesDept = (r.department || '').toLowerCase().includes(q);
         const matchesEmail = (r.userEmail || '').toLowerCase().includes(q);
-        if (!matchesName && !matchesEnroll && !matchesDept && !matchesEmail) return false;
-      }
+        return matchesName || matchesEnroll || matchesDept || matchesEmail;
+      });
+    }
 
-      return true;
-    });
-
-    // Delay Filter
+    // Delay & Shortage Filter
     if (delayFilter !== 'all') {
       recs = recs.filter((r) => {
         const metrics = calculateAttendanceMetrics({
@@ -151,9 +214,24 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
       });
     }
 
-    // Sort descending by date
+    // Sort: If daily, sort by Department then Name. If monthly, sort by Date descending.
+    if (timeMode === 'daily') {
+      return recs.sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.userName || '').localeCompare(b.userName || ''));
+    }
     return recs.sort((a, b) => b.date.localeCompare(a.date));
-  }, [attendanceRecords, selectedMonth, reportScope, activeUser, departmentFilter, searchTerm, delayFilter, companySchedule]);
+  }, [
+    attendanceRecords,
+    allUsers,
+    reportScope,
+    timeMode,
+    selectedDate,
+    selectedMonth,
+    activeUser,
+    departmentFilter,
+    searchTerm,
+    delayFilter,
+    companySchedule,
+  ]);
 
   // High-Level KPIs & Aggregated Metrics
   const summaryKpis = useMemo(() => {
@@ -228,7 +306,7 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
       schedule: companySchedule,
       isAr,
       selectedUser: targetUser,
-      monthName: selectedMonth,
+      monthName: timeMode === 'daily' ? selectedDate : selectedMonth,
     });
   };
 
@@ -253,6 +331,8 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
     }
   };
 
+  const currentDayName = getDayName(selectedDate, isAr);
+
   return (
     <div className="space-y-6 pb-12">
       {/* ----------------------------------------------------
@@ -273,8 +353,8 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
 
             <p className="text-xs sm:text-sm text-[#D8E2D1]/90 max-w-3xl leading-relaxed">
               {isAr
-                ? 'لوحة الإدارة والتحليل الشامل لمدير الموارد البشرية (HR): حساب آلي لتأخير الحضور من موعد الدخول، الخروج المبكر، وساعات العمل الفعلية مقارنة بساعات العمل الرسمية، مع استخراج كشوفات فردية أو جماعية.'
-                : 'HR attendance & shortage audit dashboard: Automated calculation of morning check-in delay, early checkout departure, and daily shortage vs official shift hours for all or single employees.'}
+                ? 'لوحة الإدارة والتحليل الشامل لمدير الموارد البشرية (HR): حساب آلي لتأخير الحضور من موعد الدخول، الخروج المبكر، وساعات العمل الفعلية مقارنة بساعات العمل الرسمية، مع استعراض يومي لكافة موظفي المنشأة أو كشف شهري تفصيلي.'
+                : 'HR attendance & shortage audit dashboard: Automated calculation of morning check-in delay, early checkout departure, and daily shortage vs official shift hours.'}
             </p>
 
             {/* Active Shift Policy Quick Badges */}
@@ -346,7 +426,9 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
             <span className="text-xs font-bold text-[#65635E]">{isAr ? 'ساعة' : 'hrs'}</span>
           </div>
           <div className="text-[11px] text-[#65635E] mt-1">
-            {isAr ? `إجمالي أيام العمل المقررة` : 'Official scheduled work days'}
+            {timeMode === 'daily'
+              ? isAr ? `ليوم ${selectedDate}` : `For ${selectedDate}`
+              : isAr ? `إجمالي أيام العمل بالشهر` : 'Monthly target'}
           </div>
         </div>
 
@@ -447,35 +529,72 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
         {/* Row 1: Scope Switcher (All Employees vs Single Employee) & Primary Export Buttons */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#E5E2D9]">
           {/* Scope Segmented Control */}
-          <div className="inline-flex p-1 rounded-2xl bg-[#FAF9F6] border border-[#E5E2D9]">
-            <button
-              type="button"
-              onClick={() => setReportScope('all')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-                reportScope === 'all'
-                  ? 'bg-[#2D3628] text-white shadow-xs'
-                  : 'text-[#65635E] hover:text-[#2D3628]'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>{isAr ? 'جميع الموظفين (شامل)' : 'All Employees'}</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-white/20">
-                {allUsers.length}
-              </span>
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex p-1 rounded-2xl bg-[#FAF9F6] border border-[#E5E2D9]">
+              <button
+                type="button"
+                onClick={() => {
+                  setReportScope('all');
+                  setTimeMode('daily');
+                }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                  reportScope === 'all'
+                    ? 'bg-[#2D3628] text-white shadow-xs'
+                    : 'text-[#65635E] hover:text-[#2D3628]'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>{isAr ? 'جميع الموظفين (شامل)' : 'All Employees'}</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-white/20">
+                  {allUsers.length}
+                </span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setReportScope('single')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-                reportScope === 'single'
-                  ? 'bg-[#5E7153] text-white shadow-xs'
-                  : 'text-[#65635E] hover:text-[#2D3628]'
-              }`}
-            >
-              <User className="w-4 h-4" />
-              <span>{isAr ? 'موظف محدد (كشف فردي)' : 'Single Employee Statement'}</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReportScope('single');
+                  setTimeMode('monthly');
+                }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                  reportScope === 'single'
+                    ? 'bg-[#5E7153] text-white shadow-xs'
+                    : 'text-[#65635E] hover:text-[#2D3628]'
+                }`}
+              >
+                <User className="w-4 h-4" />
+                <span>{isAr ? 'موظف محدد (كشف فردي)' : 'Single Employee Statement'}</span>
+              </button>
+            </div>
+
+            {/* Time Mode Switcher (Daily vs Monthly) */}
+            <div className="inline-flex p-1 rounded-2xl bg-[#FAF9F6] border border-[#E5E2D9]">
+              <button
+                type="button"
+                onClick={() => setTimeMode('daily')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  timeMode === 'daily'
+                    ? 'bg-[#5E7153] text-white shadow-xs'
+                    : 'text-[#65635E] hover:text-[#2D3628]'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{isAr ? 'ليوم محدد (يومي)' : 'Specific Day'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTimeMode('monthly')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  timeMode === 'monthly'
+                    ? 'bg-[#5E7153] text-white shadow-xs'
+                    : 'text-[#65635E] hover:text-[#2D3628]'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>{isAr ? 'لكامل الشهر (شهري)' : 'Full Month'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Export & Print Action Buttons */}
@@ -491,7 +610,7 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
               <span>
                 {reportScope === 'single'
                   ? isAr ? `تصدير كشف الموظف (.xlsx)` : `Export Employee (.xlsx)`
-                  : isAr ? `تصدير كشف جميع الموظفين (.xlsx)` : `Export All (.xlsx)`}
+                  : isAr ? `تصدير كشف الموظفين (.xlsx)` : `Export Sheet (.xlsx)`}
               </span>
             </button>
 
@@ -512,7 +631,7 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* If Single Employee Scope: Employee Picker */}
           {reportScope === 'single' && (
-            <div className="sm:col-span-2">
+            <div>
               <label className="block text-xs font-bold text-[#2D3628] mb-1">
                 {isAr ? 'اختر الموظف لعرض كشف دوامه:' : 'Select Employee:'}
               </label>
@@ -543,22 +662,56 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={isAr ? 'ابحث عن موظف أو قسم...' : 'Search employee...'}
                 className="w-full pr-8 pl-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-semibold bg-[#FAF9F6] text-[#2D3628] focus:outline-none"
-              />
+              >
+              </input>
             </div>
           )}
 
-          {/* Month Selector */}
-          <div>
-            <label className="block text-xs font-bold text-[#2D3628] mb-1">
-              {isAr ? 'الشهر المالي / التقويمي:' : 'Month:'}
-            </label>
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-bold bg-[#FAF9F6] text-[#2D3628] focus:outline-none"
-            />
-          </div>
+          {/* Time Selector: Specific Date vs Month */}
+          {timeMode === 'daily' ? (
+            <div>
+              <label className="block text-xs font-bold text-[#2D3628] mb-1 flex items-center justify-between">
+                <span>{isAr ? 'تاريخ اليوم المحدد:' : 'Selected Date:'}</span>
+                <span className="text-[11px] font-bold text-[#5E7153]">{currentDayName}</span>
+              </label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handlePrevDay}
+                  title={isAr ? 'اليوم السابق' : 'Previous Day'}
+                  className="px-2.5 py-2 rounded-xl border border-[#E5E2D9] bg-[#FAF9F6] hover:bg-[#E5E2D9] text-xs font-bold text-[#2D3628] transition-colors"
+                >
+                  ◀
+                </button>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-bold bg-[#FAF9F6] text-[#2D3628] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleNextDay}
+                  title={isAr ? 'اليوم التالي' : 'Next Day'}
+                  className="px-2.5 py-2 rounded-xl border border-[#E5E2D9] bg-[#FAF9F6] hover:bg-[#E5E2D9] text-xs font-bold text-[#2D3628] transition-colors"
+                >
+                  ▶
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                {isAr ? 'الشهر المالي / التقويمي:' : 'Month:'}
+              </label>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-bold bg-[#FAF9F6] text-[#2D3628] focus:outline-none"
+              />
+            </div>
+          )}
 
           {/* Department Filter */}
           <div>
@@ -594,6 +747,35 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
             </select>
           </div>
         </div>
+
+        {/* Quick Date Shortcuts for Daily Mode */}
+        {timeMode === 'daily' && (
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#E5E2D9]/70 text-xs">
+            <span className="text-[#65635E] font-medium flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-[#5E7153]" />
+              <span>{isAr ? 'انتقال سريع لتاريخ:' : 'Quick Date Jump:'}</span>
+            </span>
+            {[
+              { label: isAr ? '2026-09-03 (يوم البصمات المكتملة)' : '2026-09-03 (Full Punches)', date: '2026-09-03' },
+              { label: isAr ? '2026-09-04' : '2026-09-04', date: '2026-09-04' },
+              { label: isAr ? '2026-09-02' : '2026-09-02', date: '2026-09-02' },
+              { label: isAr ? '2026-09-01' : '2026-09-01', date: '2026-09-01' },
+            ].map((d) => (
+              <button
+                key={d.date}
+                type="button"
+                onClick={() => setSelectedDate(d.date)}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  selectedDate === d.date
+                    ? 'bg-[#5E7153] text-white shadow-xs font-bold'
+                    : 'bg-[#FAF9F6] hover:bg-[#E5E2D9] text-[#2D3628] border border-[#E5E2D9]'
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* If Single Employee Scope: Dedicated Employee Card */}
         {reportScope === 'single' && singleUserSummary && (
@@ -655,8 +837,10 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
               <Clock className="w-5 h-5 text-[#5E7153]" />
               <span>
                 {reportScope === 'single'
-                  ? isAr ? `سجل وساعات دوام الموظف (${activeUser.name})` : `Attendance Log for ${activeUser.name}`
-                  : isAr ? `جدول حركات الدوام وساعات التأخير والعجز لكافة الموظفين` : `All Employees Attendance & Shortage Audit Table`}
+                  ? isAr ? `سجل وساعات دوام الموظف (${activeUser.name}) - ${timeMode === 'daily' ? `يوم ${selectedDate}` : `شهر ${selectedMonth}`}` : `Attendance Log for ${activeUser.name}`
+                  : timeMode === 'daily'
+                  ? isAr ? `كشف حركات الدوام وساعات التأخير والعجز ليوم ${selectedDate} (${currentDayName}) لكافة الموظفين` : `All Employees Daily Attendance Sheet (${selectedDate})`
+                  : isAr ? `جدول حركات الدوام وساعات التأخير والعجز لكافة الموظفين لشهر ${selectedMonth}` : `All Employees Monthly Attendance Sheet (${selectedMonth})`}
               </span>
             </h3>
             <p className="text-xs text-[#65635E] mt-0.5">
@@ -667,7 +851,7 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
           </div>
 
           <div className="text-xs font-semibold text-[#65635E]">
-            {isAr ? `إجمالي السجلات:` : `Total Records:`}{' '}
+            {isAr ? `إجمالي السجلات المعروضة:` : `Total Records:`}{' '}
             <strong className="text-[#2D3628]">{filteredRecords.length}</strong>
           </div>
         </div>
@@ -992,16 +1176,37 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
             <div className="space-y-6">
               {/* Document Header */}
               <div className="flex items-start justify-between border-b pb-4">
-                <div>
-                  <h1 className="text-xl font-black text-[#2D3628] tracking-tight">
-                    {companySchedule.companyName}
-                  </h1>
-                  <h2 className="text-sm font-bold text-[#5E7153] mt-1">
-                    {isAr ? 'كشف حركات الحضور والانصراف وساعات العمل والتأخير' : 'Attendance & Shortage Statement'}
-                  </h2>
-                  <div className="text-xs text-[#65635E] mt-1">
-                    {isAr ? `الشهر: ${selectedMonth}` : `Period: ${selectedMonth}`} •{' '}
-                    {reportScope === 'single' ? (isAr ? `الموظف: ${activeUser.name}` : `Employee: ${activeUser.name}`) : (isAr ? 'كافة موظفي الشركة' : 'All Employees')}
+                <div className="flex items-center gap-4">
+                  {companySchedule.logoUrl ? (
+                    <img
+                      src={companySchedule.logoUrl}
+                      alt="Company Logo"
+                      className="w-14 h-14 object-contain rounded-xl border border-stone-200 bg-white p-1"
+                      crossOrigin="anonymous"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-[#5E7153] text-white flex items-center justify-center font-bold text-lg">
+                      {companySchedule.companyName.charAt(0)}
+                    </div>
+                  )}
+                  <div>
+                    <h1 className="text-xl font-black text-[#2D3628] tracking-tight">
+                      {companySchedule.companyName}
+                    </h1>
+                    <div className="flex items-center gap-3 text-[11px] text-[#65635E] mt-0.5">
+                      {companySchedule.commercialRegNo && <span>{isAr ? 'س.ت:' : 'C.R:'} {companySchedule.commercialRegNo}</span>}
+                      {companySchedule.taxNumber && <span>{isAr ? 'ر.ض:' : 'Tax:'} {companySchedule.taxNumber}</span>}
+                      {companySchedule.companyPhone && <span>{companySchedule.companyPhone}</span>}
+                    </div>
+                    <h2 className="text-xs font-bold text-[#5E7153] mt-1">
+                      {isAr ? 'كشف حركات الحضور والانصراف وساعات العمل والتأخير' : 'Attendance & Shortage Statement'}
+                    </h2>
+                    <div className="text-xs text-[#65635E] mt-0.5">
+                      {isAr
+                        ? `الفترة / التاريخ: ${timeMode === 'daily' ? `${selectedDate} (${currentDayName})` : selectedMonth}`
+                        : `Period: ${timeMode === 'daily' ? `${selectedDate} (${currentDayName})` : selectedMonth}`} •{' '}
+                      {reportScope === 'single' ? (isAr ? `الموظف: ${activeUser.name}` : `Employee: ${activeUser.name}`) : (isAr ? 'كافة موظفي الشركة' : 'All Employees')}
+                    </div>
                   </div>
                 </div>
 
@@ -1094,6 +1299,31 @@ export const HrWorkHoursReportView: React.FC<HrWorkHoursReportViewProps> = ({
                 <div>
                   <div className="font-bold text-[#2D3628]">{isAr ? 'الاعتماد العام / الختم' : 'General Approval / Stamp'}</div>
                   <div className="mt-8 border-b border-stone-400 w-32 mx-auto"></div>
+                </div>
+              </div>
+
+              {/* Bottom Action Controls (Hidden in Print) */}
+              <div className="pt-4 border-t border-[#E5E2D9] flex items-center justify-between print:hidden gap-3 flex-wrap">
+                <div className="text-xs text-[#65635E]">
+                  {isAr ? 'يمكنك طباعة التقرير أو حفظه كملف PDF' : 'Print or save as PDF'}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPrintModalOpen(false)}
+                    className="px-5 py-2.5 rounded-xl bg-[#EFECE4] hover:bg-[#E5E2D9] text-[#2D3628] font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4 text-[#8C887B]" />
+                    <span>{isAr ? 'إغلاق والرجوع' : 'Close Preview'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#5E7153] hover:bg-[#4E5E44] text-white font-bold text-xs shadow-md transition-colors cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>{isAr ? 'طباعة التقرير (Print)' : 'Print Now'}</span>
+                  </button>
                 </div>
               </div>
             </div>

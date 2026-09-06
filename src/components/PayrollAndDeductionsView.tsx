@@ -24,8 +24,10 @@ import {
   PenTool,
   Receipt,
   FileCheck,
+  FileSignature,
   Check,
   CreditCard,
+  Printer,
 } from 'lucide-react';
 import {
   UserProfile,
@@ -43,6 +45,10 @@ import {
 import { SalaryAdvanceModal } from './SalaryAdvanceModal';
 import { SalaryAdvanceVoucherModal } from './SalaryAdvanceVoucherModal';
 import { DigitalSignatureModal } from './DigitalSignatureModal';
+import { PayslipModal } from './PayslipModal';
+import { EmployeeLateReportModal } from './EmployeeLateReportModal';
+import { AllEmployeesLateReportModal } from './AllEmployeesLateReportModal';
+import { printHtmlDocument } from '../utils/printUtils';
 
 interface PayrollAndDeductionsViewProps {
   currentUser: UserProfile;
@@ -139,6 +145,13 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
 
   // Print/View Payslip Modal
   const [viewingPayslipUser, setViewingPayslipUser] = useState<UserProfile | null>(null);
+
+  // Late Report Modals State (Single Employee & All Employees)
+  const [viewingEmployeeLateReport, setViewingEmployeeLateReport] = useState<{
+    user: UserProfile;
+    summary: any;
+  } | null>(null);
+  const [showAllEmployeesLateReport, setShowAllEmployeesLateReport] = useState(false);
 
   // Available departments
   const departments = useMemo(() => {
@@ -419,6 +432,157 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
     }
   };
 
+  // Print full monthly payroll roster
+  const handlePrintFullPayrollReport = () => {
+    const formattedDate = new Date().toLocaleDateString(isAr ? 'ar-SA' : 'en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    const rowsHtml = (filteredSummaries || [])
+      .map(
+        (sum, index) => `
+      <tr>
+        <td style="text-align: center; font-weight: bold;">${index + 1}</td>
+        <td>
+          <div style="font-weight: bold; color: #1F2937;">${sum.userName}</div>
+          <div style="font-size: 10px; color: #6B7280;">${sum.department}</div>
+        </td>
+        <td style="text-align: left; font-weight: bold;">${formatSalaryCurrency(sum.baseSalary)}</td>
+        <td style="text-align: center;">${
+          sum.excessLateHours > 0
+            ? `<span style="color: #B91C1C; font-weight: bold;">${sum.excessLateHours}س</span>`
+            : '<span style="color: #047857;">0</span>'
+        }</td>
+        <td style="text-align: left; color: ${sum.lateDeductionAmount > 0 ? '#B91C1C' : '#6B7280'};">${
+          sum.lateDeductionAmount > 0 ? `-${formatSalaryCurrency(sum.lateDeductionAmount)}` : '0'
+        }</td>
+        <td style="text-align: left; color: ${sum.penaltyDeductionsAmount > 0 ? '#B91C1C' : '#6B7280'};">${
+          sum.penaltyDeductionsAmount > 0 ? `-${formatSalaryCurrency(sum.penaltyDeductionsAmount)}` : '0'
+        }</td>
+        <td style="text-align: left; color: ${sum.advanceInstallmentsAmount > 0 ? '#4338CA' : '#6B7280'};">${
+          sum.advanceInstallmentsAmount > 0 ? `-${formatSalaryCurrency(sum.advanceInstallmentsAmount)}` : '0'
+        }</td>
+        <td style="text-align: left; color: ${sum.waivedDeductionsAmount > 0 ? '#047857' : '#6B7280'};">${
+          sum.waivedDeductionsAmount > 0 ? `+${formatSalaryCurrency(sum.waivedDeductionsAmount)}` : '0'
+        }</td>
+        <td style="text-align: left; font-weight: 900; color: #5E7153; background-color: #F4F6F2;">${formatSalaryCurrency(
+          sum.netSalary
+        )}</td>
+      </tr>
+    `
+      )
+      .join('');
+
+    const contentHtml = `
+      <div class="header-box">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="background: #5E7153; color: white; width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold;">
+            🏢
+          </div>
+          <div>
+            <h2 style="margin: 0; font-size: 18px; color: #1F2937;">شركة التقنية والحلول الذكية</h2>
+            <p style="margin: 2px 0 0; font-size: 11px; color: #5E7153; font-weight: bold;">كشف مسير الرواتب والمستحقات والخصومات المعتمد</p>
+          </div>
+        </div>
+        <div style="text-align: left;">
+          <div style="font-size: 15px; font-weight: bold; color: #1F2937;">كشف مسير شهر: ${selectedMonth}</div>
+          <div style="font-size: 10px; color: #6B7280; margin-top: 2px;">تاريخ الاعتماد: ${formattedDate}</div>
+        </div>
+      </div>
+
+      <!-- Totals Summary Card -->
+      <table style="margin-bottom: 16px; background: #F9FAFB;">
+        <tr>
+          <th>إجمالي الرواتب الأساسية</th>
+          <th>خصومات تأخير البصمة</th>
+          <th>خصومات الجزاءات الإدارية</th>
+          <th>استقطاعات السلف</th>
+          <th>الإعفاءات المرفوعة</th>
+          <th style="background: #5E7153; color: white;">صافي الرواتب المستحقة</th>
+        </tr>
+        <tr>
+          <td style="text-align: center; font-weight: bold;">${formatSalaryCurrency(overallTotals.grossSalaries)}</td>
+          <td style="text-align: center; color: #B91C1C; font-weight: bold;">-${formatSalaryCurrency(overallTotals.lateDeductions)}</td>
+          <td style="text-align: center; color: #B91C1C; font-weight: bold;">-${formatSalaryCurrency(overallTotals.penaltyDeductions)}</td>
+          <td style="text-align: center; color: #4338CA; font-weight: bold;">-${formatSalaryCurrency(overallTotals.advanceInstallments)}</td>
+          <td style="text-align: center; color: #047857; font-weight: bold;">+${formatSalaryCurrency(overallTotals.waivedDeductions)}</td>
+          <td style="text-align: center; font-size: 15px; font-weight: 900; color: #5E7153; background: #F4F6F2;">${formatSalaryCurrency(overallTotals.netSalaries)}</td>
+        </tr>
+      </table>
+
+      <!-- Full Table -->
+      <table style="margin-bottom: 18px;">
+        <thead>
+          <tr style="background: #E5E7EB; color: #1F2937;">
+            <th style="width: 30px; text-align: center;">#</th>
+            <th>الموظف والقسم</th>
+            <th style="text-align: left;">الراتب الأساسي</th>
+            <th style="text-align: center;">ساعات الخصم</th>
+            <th style="text-align: left;">خصم التأخير</th>
+            <th style="text-align: left;">الجزاءات</th>
+            <th style="text-align: left;">أقساط السلف</th>
+            <th style="text-align: left;">إعفاءات</th>
+            <th style="text-align: left;">صافي الراتب</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+        <tfoot>
+          <tr style="background: #F3F4F6; font-weight: bold;">
+            <td colspan="2" style="text-align: center;">المجموع الكلي المعتمد</td>
+            <td style="text-align: left;">${formatSalaryCurrency(overallTotals.grossSalaries)}</td>
+            <td style="text-align: center;">${overallTotals.excessLateHours}س</td>
+            <td style="text-align: left; color: #B91C1C;">-${formatSalaryCurrency(overallTotals.lateDeductions)}</td>
+            <td style="text-align: left; color: #B91C1C;">-${formatSalaryCurrency(overallTotals.penaltyDeductions)}</td>
+            <td style="text-align: left; color: #4338CA;">-${formatSalaryCurrency(overallTotals.advanceInstallments)}</td>
+            <td style="text-align: left; color: #047857;">+${formatSalaryCurrency(overallTotals.waivedDeductions)}</td>
+            <td style="text-align: left; font-size: 14px; color: #5E7153; font-weight: 900;">${formatSalaryCurrency(overallTotals.netSalaries)}</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <!-- Signatures Grid -->
+      <div class="signatures-grid">
+        <div class="sig-box">
+          <div style="font-weight: bold; color: #4B5563;">إعداد مسؤول الرواتب</div>
+          <div style="height: 44px; display: flex; align-items: center; justify-content: center; margin: 4px 0;">
+            <span style="font-size: 10px; color: #059669; font-weight: bold;">✓ تم الحساب والتدقيق</span>
+          </div>
+          <div style="font-size: 10px; color: #6B7280;">شؤون الموظفين • دوامي</div>
+        </div>
+
+        <div class="sig-box">
+          <div style="font-weight: bold; color: #4B5563;">مدير الموارد البشرية والمالية</div>
+          <div style="height: 44px; display: flex; align-items: center; justify-content: center; margin: 4px 0;">
+            ${
+              currentUser.signatureDataUrl
+                ? `<img src="${currentUser.signatureDataUrl}" class="sig-img" alt="Manager Signature" />`
+                : `<div class="stamp-box">معتمد</div>`
+            }
+          </div>
+          <div style="font-size: 10px; color: #6B7280;">${currentUser.name} (${currentUser.title})</div>
+        </div>
+
+        <div class="sig-box">
+          <div style="font-weight: bold; color: #4B5563;">اعتماد الإدارة العامة والصرف</div>
+          <div style="height: 44px; display: flex; align-items: center; justify-content: center; margin: 4px 0;">
+            <div class="stamp-box">صُرِف</div>
+          </div>
+          <div style="font-size: 10px; color: #6B7280;">صالح للتحويل البنكي عبر نظام حماية الأجور (WPS)</div>
+        </div>
+      </div>
+    `;
+
+    printHtmlDocument({
+      title: `كشف مسير الرواتب المعتمد - شهر ${selectedMonth}`,
+      contentHtml,
+      landscape: true,
+    });
+  };
+
   // Salary advance creation handler
   const handleCreateSalaryAdvance = async (advance: SalaryAdvance): Promise<boolean> => {
     try {
@@ -523,6 +687,18 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
             </div>
 
             <button
+              onClick={() => setShowSignatureModalForUser(currentUser)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#D9E0D2] text-[#2D3628] hover:bg-[#FAF9F6] text-xs sm:text-sm font-bold shadow-xs transition-all cursor-pointer"
+              title={isAr ? 'إعداد وتوثيق توقيعك الرقمي للمسيرات' : 'Setup your digital signature'}
+            >
+              <FileSignature className="w-4 h-4 text-[#5E7153]" />
+              <span>{isAr ? 'توقيعي الرقمي' : 'My Signature'}</span>
+              {currentUser.signatureDataUrl && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+              )}
+            </button>
+
+            <button
               onClick={() => setShowAddPenaltyModal(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#991B1B] text-white hover:bg-[#7F1D1D] text-xs sm:text-sm font-bold shadow-sm transition-all"
             >
@@ -532,10 +708,19 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
 
             <button
               onClick={handleExportPayrollExcel}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#5E7153] text-white hover:bg-[#4B5B42] text-xs sm:text-sm font-bold shadow-sm transition-all"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E5E2D9] text-[#2D3628] hover:bg-[#FAF9F6] text-xs sm:text-sm font-bold shadow-xs transition-all cursor-pointer"
             >
-              <Download className="w-4 h-4" />
-              <span>{isAr ? 'تصدير الكشف (Excel)' : 'Export Payroll'}</span>
+              <Download className="w-4 h-4 text-[#5E7153]" />
+              <span>{isAr ? 'تصدير (Excel)' : 'Export Excel'}</span>
+            </button>
+
+            <button
+              onClick={handlePrintFullPayrollReport}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#5E7153] text-white hover:bg-[#4B5B42] text-xs sm:text-sm font-bold shadow-sm transition-all cursor-pointer"
+              title={isAr ? 'طباعة كشف المسير الشهري المعتمد لجميع الموظفين' : 'Print Monthly Payroll Sheet'}
+            >
+              <Printer className="w-4 h-4" />
+              <span>{isAr ? 'طباعة كشف المسير' : 'Print Payroll'}</span>
             </button>
           </div>
         </div>
@@ -679,20 +864,33 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-[#65635E]" />
-          <select
-            value={departmentFilter}
-            onChange={(e) => setDepartmentFilter(e.target.value)}
-            className="w-full sm:w-auto bg-[#FAF9F6] border border-[#E5E2D9] rounded-lg px-3 py-2 text-xs sm:text-sm font-semibold text-[#2D3628] focus:outline-none"
-          >
-            <option value="all">{isAr ? 'جميع الأقسام' : 'All Departments'}</option>
-            {departments.map((dept) => (
-              <option key={dept} value={dept}>
-                {dept}
-              </option>
-            ))}
-          </select>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+            <Filter className="w-4 h-4 text-[#65635E]" />
+            <select
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              className="w-full sm:w-auto bg-[#FAF9F6] border border-[#E5E2D9] rounded-lg px-3 py-2 text-xs sm:text-sm font-semibold text-[#2D3628] focus:outline-none"
+            >
+              <option value="all">{isAr ? 'جميع الأقسام' : 'All Departments'}</option>
+              {departments.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {activeSubTab === 'late_tracking' && (
+            <button
+              onClick={() => setShowAllEmployeesLateReport(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#5E7153] hover:bg-[#4D5E44] text-white font-bold text-xs sm:text-sm shadow-sm transition-all whitespace-nowrap cursor-pointer"
+              title={isAr ? 'تصدير وطباعة كشف تفاصيل التأخيرات الشامل لكافة الموظفين' : 'Export and Print All Employees Late Punch Report'}
+            >
+              <Printer className="w-4 h-4" />
+              <span>{isAr ? 'تصدير / طباعة للجميع (PDF/Print)' : 'Export All (PDF/Print)'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -798,8 +996,8 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
                     </div>
                   </div>
 
-                  {/* Right: Calculated Deduction & Expand Button */}
-                  <div className="flex items-center justify-between lg:justify-end w-full lg:w-auto gap-4">
+                  {/* Right: Calculated Deduction & Export & Expand Button */}
+                  <div className="flex flex-wrap sm:flex-nowrap items-center justify-between lg:justify-end w-full lg:w-auto gap-3">
                     <div className="text-right">
                       <p className="text-[11px] text-[#65635E] font-semibold">{isAr ? 'خصم التأخير المستحق' : 'Late Deduction'}</p>
                       <p
@@ -815,8 +1013,22 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
                     </div>
 
                     <button
+                      onClick={() => {
+                        const original = allUsers.find((u) => u.id === sum.userId);
+                        if (original) {
+                          setViewingEmployeeLateReport({ user: original, summary: sum });
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] border border-[#E5E2D9] text-[#2D3628] font-bold text-xs transition-all shadow-sm cursor-pointer"
+                      title={isAr ? 'تصدير وطباعة تقرير التأخير لهذا الموظف (PDF/طباعة)' : 'Export/Print employee late punch report'}
+                    >
+                      <Printer className="w-3.5 h-3.5 text-[#5E7153]" />
+                      <span className="hidden sm:inline">{isAr ? 'تقرير التأخير' : 'Late Report'}</span>
+                    </button>
+
+                    <button
                       onClick={() => setExpandedEmployeeId(isExpanded ? null : sum.userId)}
-                      className="p-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] border border-[#E5E2D9] text-[#2D3628] transition-all"
+                      className="p-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] border border-[#E5E2D9] text-[#2D3628] transition-all cursor-pointer"
                       title={isAr ? 'عرض تفاصيل بصمات التأخير' : 'View punch details'}
                     >
                       {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -827,16 +1039,31 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
                 {/* Expanded Details: Daily punch log & waiver authority */}
                 {isExpanded && (
                   <div className="border-t border-[#E5E2D9] bg-[#FAF9F6]/60 p-4 sm:p-5 space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                       <h5 className="text-xs sm:text-sm font-bold text-[#2D3628] flex items-center gap-1.5">
                         <Calendar className="w-4 h-4 text-[#5E7153]" />
                         {isAr
                           ? `تفاصيل سجلات التأخير لشهر ${selectedMonth} (${sum.lateRecords.length} حالات مسجلة):`
                           : `Late Punch Records for ${selectedMonth} (${sum.lateRecords.length} recorded):`}
                       </h5>
-                      <span className="text-xs text-[#65635E]">
-                        {isAr ? 'موعد الحضور الرسمي: 09:00 ص' : 'Expected Start: 09:00 AM'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const original = allUsers.find((u) => u.id === sum.userId);
+                            if (original) {
+                              setViewingEmployeeLateReport({ user: original, summary: sum });
+                            }
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-[#E5E2D9] text-[#2D3628] text-xs font-bold hover:bg-[#FAF9F6] shadow-sm transition-all cursor-pointer"
+                          title={isAr ? 'طباعة وتصدير PDF لسجلات تأخير الموظف' : 'Print and Export PDF'}
+                        >
+                          <Printer className="w-3.5 h-3.5 text-[#5E7153]" />
+                          <span>{isAr ? 'طباعة وPDF للموظف' : 'Print / PDF'}</span>
+                        </button>
+                        <span className="text-xs text-[#65635E]">
+                          {isAr ? 'موعد الحضور الرسمي: 09:00 ص' : 'Expected Start: 09:00 AM'}
+                        </span>
+                      </div>
                     </div>
 
                     {sum.lateRecords.length === 0 ? (
@@ -968,11 +1195,13 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
                 <thead className="bg-[#FAF9F6] border-b border-[#E5E2D9] text-[#65635E] font-bold">
                   <tr>
                     <th className="p-3">{isAr ? 'الموظف' : 'Employee'}</th>
-                    <th className="p-3">{isAr ? 'نوع الجزاء والمسمى' : 'Title & Type'}</th>
+                    <th className="p-3">{isAr ? 'نوع الجزاء' : 'Penalty Type'}</th>
+                    <th className="p-3">{isAr ? 'الوصف' : 'Description'}</th>
                     <th className="p-3">{isAr ? 'التاريخ' : 'Date'}</th>
                     <th className="p-3">{isAr ? 'مبلغ الخصم' : 'Amount'}</th>
-                    <th className="p-3">{isAr ? 'الأيام المخصومة' : 'Days'}</th>
-                    <th className="p-3">{isAr ? 'السبب والجهة المصدرة' : 'Reason & Issuer'}</th>
+                    <th className="p-3 text-center">{isAr ? 'الأيام المخصومة' : 'Days'}</th>
+                    <th className="p-3">{isAr ? 'السبب' : 'Reason'}</th>
+                    <th className="p-3">{isAr ? 'الجهة المصدرة' : 'Issuing Authority'}</th>
                     <th className="p-3">{isAr ? 'الحالة' : 'Status'}</th>
                     <th className="p-3 text-center">{isAr ? 'صلاحية رفع الخصم' : 'Waiver Action'}</th>
                   </tr>
@@ -984,31 +1213,54 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
                       const isWaived = ded.status === 'waived';
                       return (
                         <tr key={ded.id} className={isWaived ? 'bg-emerald-50/40' : 'hover:bg-[#FAF9F6]'}>
-                          <td className="p-3 font-bold text-[#2D3628] whitespace-nowrap">{ded.userName}</td>
-                          <td className="p-3">
-                            <span className="font-bold text-[#2D3628] block">{ded.title}</span>
-                            <span className="text-[10px] text-[#8C887B]">
-                              {ded.type === 'penalty_disciplinary'
-                                ? isAr
-                                  ? 'جزاء إداري'
-                                  : 'Disciplinary'
-                                : ded.type === 'unexcused_absence'
-                                ? isAr
-                                  ? 'غياب غير مبرر'
-                                  : 'Unexcused Absence'
-                                : isAr
-                                ? 'أخرى'
-                                : 'Other'}
-                            </span>
+                          <td className="p-3 font-bold text-[#2D3628] whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span>{ded.userName}</span>
+                              {ded.department && (
+                                <span className="text-[10px] text-[#8C887B] font-normal">({ded.department})</span>
+                              )}
+                            </div>
                           </td>
-                          <td className="p-3 font-mono whitespace-nowrap">{ded.date}</td>
+                          <td className="p-3 whitespace-nowrap">
+                            {ded.type === 'penalty_disciplinary' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold">
+                                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                {isAr ? 'جزاء إداري' : 'Disciplinary'}
+                              </span>
+                            ) : ded.type === 'unexcused_absence' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-[11px] font-bold">
+                                <Clock className="w-3 h-3 text-purple-600" />
+                                {isAr ? 'غياب غير مبرر' : 'Unexcused Absence'}
+                              </span>
+                            ) : ded.type === 'late_arrival' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                {isAr ? 'تأخير بصمة' : 'Late Arrival'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200 text-[11px] font-bold">
+                                {isAr ? 'أخرى' : 'Other'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 font-semibold text-[#2D3628] min-w-[150px]">
+                            {ded.title}
+                          </td>
+                          <td className="p-3 font-mono text-[#65635E] whitespace-nowrap">{ded.date}</td>
                           <td className="p-3 font-bold text-rose-800 whitespace-nowrap">
                             {formatSalaryCurrency(ded.amount)}
                           </td>
-                          <td className="p-3 font-bold text-[#2D3628]">{ded.daysDeducted ? `${ded.daysDeducted} ${isAr ? 'يوم' : 'day'}` : '-'}</td>
-                          <td className="p-3 text-[#65635E] max-w-xs">
-                            <span className="block">{ded.reason}</span>
-                            <span className="text-[10px] text-[#8C887B] block mt-0.5">{ded.issuedBy}</span>
+                          <td className="p-3 font-bold text-[#2D3628] whitespace-nowrap text-center">
+                            {ded.daysDeducted ? `${ded.daysDeducted} ${isAr ? 'يوم' : 'day'}` : '-'}
+                          </td>
+                          <td className="p-3 text-[#4B5563] min-w-[180px] max-w-xs leading-relaxed">
+                            {ded.reason || '-'}
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#FAF9F6] border border-[#E5E2D9] text-[#2D3628] font-medium text-[11px]">
+                              <Building2 className="w-3.5 h-3.5 text-[#5E7153]" />
+                              <span>{ded.issuedBy || (isAr ? 'إدارة الموارد البشرية (HR)' : 'HR Department')}</span>
+                            </span>
                           </td>
                           <td className="p-3 whitespace-nowrap">
                             {isWaived ? (
@@ -1969,185 +2221,15 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
       {/* MODAL: OFFICIAL PAYSLIP VIEW (قسيمة الراتب المعتمدة) */}
       {/* ---------------------------------------------------- */}
       {payslipSummary && viewingPayslipUser && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 sm:p-7 border border-[#E5E2D9] shadow-2xl space-y-5 text-right">
-            {/* Payslip Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-[#E5E2D9]">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl bg-[#5E7153] text-white flex items-center justify-center font-bold shadow-sm">
-                  <Building2 className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-[#2D3628]">
-                    {isAr ? 'قسيمة الراتب والمستحقات الشهرية' : 'Monthly Salary Payslip'}
-                  </h3>
-                  <p className="text-xs text-[#65635E]">
-                    {isAr ? `منظومة دوامي • شهر ${selectedMonth}` : `Dawamy Platform • ${selectedMonth}`}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setViewingPayslipUser(null)}
-                className="p-1 rounded-lg text-[#8C887B] hover:text-[#2D3628] hover:bg-[#FAF9F6]"
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Employee Card */}
-            <div className="bg-[#FAF9F6] p-4 rounded-xl border border-[#E5E2D9] flex items-center justify-between">
-              <div>
-                <p className="font-bold text-sm text-[#2D3628]">{payslipSummary.userName}</p>
-                <p className="text-xs text-[#65635E]">{viewingPayslipUser.title}</p>
-                <p className="text-[11px] text-[#8C887B]">{payslipSummary.department}</p>
-              </div>
-              <img
-                src={payslipSummary.avatar}
-                alt={payslipSummary.userName}
-                className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm"
-              />
-            </div>
-
-            {/* Breakdown Table */}
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-2 border-b border-[#E5E2D9]">
-                <span className="text-[#65635E]">{isAr ? 'الراتب الأساسي المعتمد:' : 'Base Salary:'}</span>
-                <span className="font-bold text-[#2D3628]">{formatSalaryCurrency(payslipSummary.baseSalary)}</span>
-              </div>
-
-              <div className="flex justify-between py-2 border-b border-[#E5E2D9]">
-                <span className="text-[#65635E]">
-                  {isAr
-                    ? `خصم التأخير بالبصمة (${payslipSummary.excessLateHours} ساعة زائدة عن سماحية الـ 4س):`
-                    : `Biometric Late Deduction (${payslipSummary.excessLateHours}h excess):`}
-                </span>
-                <span
-                  className={`font-bold ${
-                    payslipSummary.lateDeductionAmount > 0 ? 'text-rose-700' : 'text-emerald-700'
-                  }`}
-                >
-                  {payslipSummary.lateDeductionAmount > 0
-                    ? `-${formatSalaryCurrency(payslipSummary.lateDeductionAmount)}`
-                    : '0.00 ر.س'}
-                </span>
-              </div>
-
-              <div className="flex justify-between py-2 border-b border-[#E5E2D9]">
-                <span className="text-[#65635E]">{isAr ? 'خصم الجزاءات والعقوبات الإدارية:' : 'Disciplinary Penalties:'}</span>
-                <span
-                  className={`font-bold ${
-                    payslipSummary.penaltyDeductionsAmount > 0 ? 'text-rose-700' : 'text-emerald-700'
-                  }`}
-                >
-                  {payslipSummary.penaltyDeductionsAmount > 0
-                    ? `-${formatSalaryCurrency(payslipSummary.penaltyDeductionsAmount)}`
-                    : '0.00 ر.س'}
-                </span>
-              </div>
-
-              {payslipSummary.advanceInstallmentsAmount > 0 && (
-                <div className="flex justify-between py-2 border-b border-indigo-200 bg-indigo-50/70 px-2.5 rounded-lg">
-                  <span className="text-indigo-900 font-bold flex items-center gap-1.5">
-                    <CreditCard className="w-3.5 h-3.5 text-indigo-700" />
-                    <span>{isAr ? 'خصم قسط سلفة الراتب المستحق:' : 'Advance Loan Installment:'}</span>
-                  </span>
-                  <span className="font-bold text-indigo-900">
-                    -{formatSalaryCurrency(payslipSummary.advanceInstallmentsAmount)}
-                  </span>
-                </div>
-              )}
-
-              {payslipSummary.waivedDeductionsAmount > 0 && (
-                <div className="flex justify-between py-2 border-b border-emerald-200 bg-emerald-50/60 px-2 rounded-lg">
-                  <span className="text-emerald-800 font-bold">{isAr ? 'إعفاءات وخصومات تم رفعها رسمياً:' : 'Officially Waived:'}</span>
-                  <span className="font-bold text-emerald-700">
-                    +{formatSalaryCurrency(payslipSummary.waivedDeductionsAmount)}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex justify-between py-3 bg-[#5E7153]/10 px-3 rounded-xl border border-[#5E7153]/20 text-sm">
-                <span className="font-bold text-[#2D3628]">{isAr ? 'صافي الراتب المستحق للصرف:' : 'Net Payable Salary:'}</span>
-                <span className="font-extrabold text-[#5E7153] text-base">
-                  {formatSalaryCurrency(payslipSummary.netSalary)}
-                </span>
-              </div>
-            </div>
-
-            {/* Official Signatures Section on Payslip */}
-            <div className="pt-2 border-t border-[#E5E2D9] grid grid-cols-2 gap-3 text-right">
-              {/* Approver Signature */}
-              <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E5E2D9]">
-                <span className="text-[10px] text-[#65635E] font-bold block mb-1">
-                  {isAr ? 'اعتماد الإدارة المالية:' : 'Finance Director Approval:'}
-                </span>
-                <div className="h-12 flex items-center justify-center bg-white rounded-lg border border-dashed border-[#E5E2D9] overflow-hidden px-2">
-                  {currentUser.signatureDataUrl ? (
-                    <img
-                      src={currentUser.signatureDataUrl}
-                      alt="Manager Signature"
-                      className="max-h-10 object-contain"
-                    />
-                  ) : (
-                    <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      <span>{isAr ? 'معتمد إلكترونياً' : 'Verified Electronically'}</span>
-                    </span>
-                  )}
-                </div>
-                <p className="text-[9px] text-[#8C887B] text-center mt-1">
-                  {currentUser.name} ({currentUser.title})
-                </p>
-              </div>
-
-              {/* Employee Signature */}
-              <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E5E2D9]">
-                <span className="text-[10px] text-[#65635E] font-bold block mb-1">
-                  {isAr ? 'توقيع واستلام الموظف:' : 'Employee Acknowledgment:'}
-                </span>
-                <div className="h-12 flex items-center justify-center bg-white rounded-lg border border-dashed border-[#E5E2D9] overflow-hidden px-2">
-                  {viewingPayslipUser.signatureDataUrl ? (
-                    <img
-                      src={viewingPayslipUser.signatureDataUrl}
-                      alt="Employee Signature"
-                      className="max-h-10 object-contain"
-                    />
-                  ) : (
-                    <span className="text-[10px] text-[#8C887B] italic">
-                      {isAr ? 'بانتظار توقيع الموظف' : 'Pending signature'}
-                    </span>
-                  )}
-                </div>
-                <p className="text-[9px] text-[#8C887B] text-center mt-1">
-                  {viewingPayslipUser.name}
-                </p>
-              </div>
-            </div>
-
-            {/* Print & Close */}
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                onClick={() => {
-                  try {
-                    window.print();
-                  } catch (e) {
-                    console.warn('Printing not available:', e);
-                  }
-                }}
-                className="px-4 py-2 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#2D3628] font-bold text-xs flex items-center gap-1.5 border border-[#E5E2D9] cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>{isAr ? 'طباعة القسيمة' : 'Print'}</span>
-              </button>
-              <button
-                onClick={() => setViewingPayslipUser(null)}
-                className="px-5 py-2 rounded-xl bg-[#5E7153] text-white font-bold text-xs cursor-pointer"
-              >
-                {isAr ? 'إغلاق' : 'Close'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PayslipModal
+          isOpen={!!viewingPayslipUser}
+          onClose={() => setViewingPayslipUser(null)}
+          employee={viewingPayslipUser}
+          currentUser={currentUser}
+          summary={payslipSummary}
+          selectedMonth={selectedMonth}
+          lang={lang}
+        />
       )}
 
       {/* ---------------------------------------------------- */}
@@ -2187,6 +2269,36 @@ export const PayrollAndDeductionsView: React.FC<PayrollAndDeductionsViewProps> =
           onClose={() => setShowSignatureModalForUser(null)}
           currentUser={showSignatureModalForUser}
           onSaveSignature={handleSaveUserSignature}
+          lang={lang}
+        />
+      )}
+
+      {/* ---------------------------------------------------- */}
+      {/* MODAL: SINGLE EMPLOYEE LATE PUNCH DETAILS REPORT     */}
+      {/* ---------------------------------------------------- */}
+      {viewingEmployeeLateReport && (
+        <EmployeeLateReportModal
+          isOpen={!!viewingEmployeeLateReport}
+          onClose={() => setViewingEmployeeLateReport(null)}
+          employee={viewingEmployeeLateReport.user}
+          currentUser={currentUser}
+          summary={viewingEmployeeLateReport.summary}
+          selectedMonth={selectedMonth}
+          lang={lang}
+        />
+      )}
+
+      {/* ---------------------------------------------------- */}
+      {/* MODAL: ALL EMPLOYEES COMPREHENSIVE LATE REPORT       */}
+      {/* ---------------------------------------------------- */}
+      {showAllEmployeesLateReport && (
+        <AllEmployeesLateReportModal
+          isOpen={showAllEmployeesLateReport}
+          onClose={() => setShowAllEmployeesLateReport(false)}
+          currentUser={currentUser}
+          summaries={filteredSummaries}
+          selectedMonth={selectedMonth}
+          departmentFilter={departmentFilter}
           lang={lang}
         />
       )}

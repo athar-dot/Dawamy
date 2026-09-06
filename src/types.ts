@@ -147,10 +147,40 @@ export type AttendanceStatus =
 
 export type BiometricVerifyMethod = 'fingerprint' | 'face' | 'card' | 'manual';
 
+export interface CompanyProfile {
+  id?: string;
+  nameAr: string;
+  nameEn: string;
+  logoUrl?: string; // Image URL or Base64
+  stampUrl?: string; // Official stamp / seal image URL or Base64
+  commercialRegNo?: string; // رقم السجل التجاري
+  taxNumber?: string; // الرقم الضريبي
+  email?: string;
+  phone?: string;
+  website?: string;
+  addressAr?: string;
+  addressEn?: string;
+  country?: string;
+  city?: string;
+  currency?: string; // SAR, EGP, AED, USD, etc.
+  taglineAr?: string;
+  taglineEn?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface CompanyWorkSchedule {
   id: string;
   companyName: string;
   companyNameEn?: string;
+  logoUrl?: string; // Company logo URL or Base64
+  stampUrl?: string; // Official stamp URL or Base64
+  commercialRegNo?: string; // رقم السجل التجاري
+  taxNumber?: string; // الرقم الضريبي
+  companyAddress?: string;
+  companyPhone?: string;
+  companyEmail?: string;
+  currency?: string; // e.g. ر.س, EGP, AED
   workDays: number[]; // 0: Sunday, 1: Monday, 2: Tuesday, 3: Wednesday, 4: Thursday, 5: Friday, 6: Saturday
   dailyWorkHours: number; // e.g. 8.0
   startTime: string; // "08:00" or "09:00" (HH:mm)

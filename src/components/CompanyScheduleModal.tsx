@@ -39,6 +39,15 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
   const isAr = lang === 'ar';
 
   const [companyName, setCompanyName] = useState(currentSchedule.companyName || '');
+  const [logoUrl, setLogoUrl] = useState(currentSchedule.logoUrl || '');
+  const [stampUrl, setStampUrl] = useState(currentSchedule.stampUrl || '');
+  const [commercialRegNo, setCommercialRegNo] = useState(currentSchedule.commercialRegNo || '');
+  const [taxNumber, setTaxNumber] = useState(currentSchedule.taxNumber || '');
+  const [companyAddress, setCompanyAddress] = useState(currentSchedule.companyAddress || '');
+  const [companyPhone, setCompanyPhone] = useState(currentSchedule.companyPhone || '');
+  const [companyEmail, setCompanyEmail] = useState(currentSchedule.companyEmail || '');
+  const [currency, setCurrency] = useState(currentSchedule.currency || 'ر.س');
+
   const [selectedPreset, setSelectedPreset] = useState<CompanyWorkSchedule['preset']>(currentSchedule.preset || 'sun_thu_8h');
   const [workDays, setWorkDays] = useState<number[]>(currentSchedule.workDays || [0, 1, 2, 3, 4]);
   const [dailyWorkHours, setDailyWorkHours] = useState<number>(currentSchedule.dailyWorkHours || 8.0);
@@ -112,6 +121,14 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
       const updated: CompanyWorkSchedule = {
         ...currentSchedule,
         companyName: companyName.trim(),
+        logoUrl: logoUrl.trim() || undefined,
+        stampUrl: stampUrl.trim() || undefined,
+        commercialRegNo: commercialRegNo.trim() || undefined,
+        taxNumber: taxNumber.trim() || undefined,
+        companyAddress: companyAddress.trim() || undefined,
+        companyPhone: companyPhone.trim() || undefined,
+        companyEmail: companyEmail.trim() || undefined,
+        currency: currency.trim() || 'ر.س',
         preset: selectedPreset,
         workDays,
         dailyWorkHours: Number(dailyWorkHours),
@@ -172,20 +189,137 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-6">
-          {/* Company Name */}
-          <div>
-            <label className="block text-xs font-bold text-[#2D3628] mb-1.5">
-              {isAr ? 'اسم الشركة / المنشأة' : 'Company / Organization Name'}
-            </label>
-            <div className="relative">
-              <Building2 className="w-4 h-4 text-[#65635E] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          {/* Company Identity & Branding Section */}
+          <div className="p-4 rounded-2xl bg-[#FAF9F6] border border-[#E5E2D9] space-y-4">
+            <h4 className="text-xs font-extrabold text-[#2D3628] uppercase tracking-wider flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-[#5E7153]" />
+              <span>{isAr ? 'هوية وبيانات الشركة الرسمية (تظهر في التقارير والسندات)' : 'Company Identity & Official Details'}</span>
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Company Name */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'اسم الشركة / المنشأة *' : 'Company Name *'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder={isAr ? 'مثال: شركة دوامي للتقنية' : 'e.g. Dawamy Tech Solutions'}
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              {/* Currency */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'العملة المعتمدة' : 'Currency'}
+                </label>
+                <input
+                  type="text"
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  placeholder="ر.س / EGP / USD"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              {/* Logo URL */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'رابط شعار الشركة (Logo URL)' : 'Company Logo URL'}
+                </label>
+                <input
+                  type="url"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://example.com/logo.png"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              {/* Stamp URL */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'رابط الختم الرسمي / التوقيع (Stamp URL)' : 'Official Stamp URL'}
+                </label>
+                <input
+                  type="url"
+                  value={stampUrl}
+                  onChange={(e) => setStampUrl(e.target.value)}
+                  placeholder="https://example.com/stamp.png"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              {/* Commercial Reg No */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'رقم السجل التجاري' : 'Commercial Reg. No'}
+                </label>
+                <input
+                  type="text"
+                  value={commercialRegNo}
+                  onChange={(e) => setCommercialRegNo(e.target.value)}
+                  placeholder="1010xxxxxx"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              {/* Tax Number */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'الرقم الضريبي' : 'Tax Number'}
+                </label>
+                <input
+                  type="text"
+                  value={taxNumber}
+                  onChange={(e) => setTaxNumber(e.target.value)}
+                  placeholder="300xxxxxxxxx"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              {/* Phone & Email */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'رقم الهاتف الرسمي' : 'Official Phone'}
+                </label>
+                <input
+                  type="text"
+                  value={companyPhone}
+                  onChange={(e) => setCompanyPhone(e.target.value)}
+                  placeholder="+966 11 000 0000"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                  {isAr ? 'البريد الإلكتروني للشركة' : 'Company Email'}
+                </label>
+                <input
+                  type="email"
+                  value={companyEmail}
+                  onChange={(e) => setCompanyEmail(e.target.value)}
+                  placeholder="hr@company.com"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#2D3628] mb-1">
+                {isAr ? 'عنوان المقر الرئيسي' : 'Headquarters Address'}
+              </label>
               <input
                 type="text"
-                required
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                placeholder={isAr ? 'مثال: شركة دوامي للتقنية' : 'e.g. Dawamy Tech Solutions'}
-                className="w-full pr-10 pl-4 py-2.5 rounded-xl border border-[#E5E2D9] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40 text-sm font-medium bg-[#FAF9F6]"
+                value={companyAddress}
+                onChange={(e) => setCompanyAddress(e.target.value)}
+                placeholder={isAr ? 'الرياض، المملكة العربية السعودية' : 'Riyadh, Saudi Arabia'}
+                className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
               />
             </div>
           </div>

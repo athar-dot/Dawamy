@@ -24,8 +24,15 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { LeaveOrWfhRequest, UserProfile, NotificationItem, AttendanceRecord, BiometricDeviceConfig, SalaryDeduction } from '../types';
-import { INITIAL_REQUESTS, INITIAL_USERS, INITIAL_NOTIFICATIONS, INITIAL_DEDUCTIONS } from '../mockData';
+import { LeaveOrWfhRequest, UserProfile, NotificationItem, AttendanceRecord, BiometricDeviceConfig, SalaryDeduction, SalaryAdvance } from '../types';
+import {
+  INITIAL_REQUESTS,
+  INITIAL_USERS,
+  INITIAL_NOTIFICATIONS,
+  INITIAL_DEDUCTIONS,
+  INITIAL_ATTENDANCE_RECORDS,
+  INITIAL_SALARY_ADVANCES,
+} from '../mockData';
 
 // Initialize Firebase App
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -164,35 +171,38 @@ export async function logoutUser(): Promise<void> {
 }
 
 // ----------------------------------------------------
-// SEED INITIAL DATA IF EMPTY
+// SEED INITIAL DATA IF EMPTY OR INCOMPLETE
 // ----------------------------------------------------
 export async function seedInitialDataIfEmpty() {
   try {
-    // 1. Seed Users if empty
-    const usersSnapshot = await getDocs(collection(db, 'users'));
-    if (usersSnapshot.empty) {
-      console.log('Seeding initial users to Firestore...');
-      for (const u of INITIAL_USERS) {
-        await setDoc(doc(db, 'users', u.id), u);
-      }
+    // 1. Seed Users (ensure all standard employees exist in Firestore)
+    for (const u of INITIAL_USERS) {
+      await setDoc(doc(db, 'users', u.id), cleanFirestorePayload(u), { merge: true });
     }
 
-    // 2. Seed Requests if empty
-    const reqSnapshot = await getDocs(collection(db, 'requests'));
-    if (reqSnapshot.empty) {
-      console.log('Seeding initial leave & WFH requests to Firestore...');
-      for (const r of INITIAL_REQUESTS) {
-        await setDoc(doc(db, 'requests', r.id), r);
-      }
+    // 2. Seed Requests
+    for (const r of INITIAL_REQUESTS) {
+      await setDoc(doc(db, 'requests', r.id), cleanFirestorePayload(r), { merge: true });
     }
 
-    // 3. Seed Notifications if empty
-    const notifSnapshot = await getDocs(collection(db, 'notifications'));
-    if (notifSnapshot.empty) {
-      console.log('Seeding initial notifications to Firestore...');
-      for (const n of INITIAL_NOTIFICATIONS) {
-        await setDoc(doc(db, 'notifications', n.id), n);
-      }
+    // 3. Seed Notifications
+    for (const n of INITIAL_NOTIFICATIONS) {
+      await setDoc(doc(db, 'notifications', n.id), cleanFirestorePayload(n), { merge: true });
+    }
+
+    // 4. Seed Deductions
+    for (const d of INITIAL_DEDUCTIONS) {
+      await setDoc(doc(db, 'deductions', d.id), cleanFirestorePayload(d), { merge: true });
+    }
+
+    // 5. Seed Attendance (ensure all employee records exist)
+    for (const a of INITIAL_ATTENDANCE_RECORDS) {
+      await setDoc(doc(db, 'attendance', a.id), cleanFirestorePayload(a), { merge: true });
+    }
+
+    // 6. Seed Salary Advances
+    for (const adv of INITIAL_SALARY_ADVANCES) {
+      await setDoc(doc(db, 'advances', adv.id), cleanFirestorePayload(adv), { merge: true });
     }
   } catch (error) {
     console.warn('Initial seeding note (will fallback smoothly):', error);
@@ -226,9 +236,9 @@ export function subscribeToRequests(callback: (requests: LeaveOrWfhRequest[]) =>
 export async function createRequestInFirestore(req: LeaveOrWfhRequest) {
   try {
     await setDoc(doc(db, 'requests', req.id), {
-      ...req,
+      ...cleanFirestorePayload(req),
       syncedAt: new Date().toISOString(),
-    });
+    }, { merge: true });
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, `requests/${req.id}`);
@@ -243,11 +253,19 @@ export async function updateRequestStatusInFirestore(
 ) {
   try {
     const ref = doc(db, 'requests', requestId);
-    await updateDoc(ref, {
-      status,
-      ...extra,
-      updatedAt: new Date().toISOString(),
-    });
+    const initialMatch = INITIAL_REQUESTS.find((r) => r.id === requestId);
+    const basePayload = initialMatch ? cleanFirestorePayload(initialMatch) : {};
+
+    await setDoc(
+      ref,
+      {
+        ...basePayload,
+        status,
+        ...(extra ? cleanFirestorePayload(extra) : {}),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `requests/${requestId}`);
@@ -274,15 +292,36 @@ export function subscribeToUsers(callback: (users: UserProfile[]) => void) {
     q,
     (snapshot) => {
       if (!snapshot.empty) {
-        const usersList: UserProfile[] = [];
+        const firestoreMap = new Map<string, UserProfile>();
         snapshot.forEach((docSnap) => {
-          usersList.push({ id: docSnap.id, ...(docSnap.data() as Omit<UserProfile, 'id'>) });
+          firestoreMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<UserProfile, 'id'>) });
         });
-        setTimeout(() => callback(usersList), 0);
+
+        const merged: UserProfile[] = [];
+        const seenIds = new Set<string>();
+
+        // Add Firestore users
+        firestoreMap.forEach((user, id) => {
+          merged.push(user);
+          seenIds.add(id);
+        });
+
+        // Add missing initial users
+        INITIAL_USERS.forEach((initUser) => {
+          if (!seenIds.has(initUser.id)) {
+            merged.push(initUser);
+            seenIds.add(initUser.id);
+          }
+        });
+
+        setTimeout(() => callback(merged), 0);
+      } else {
+        setTimeout(() => callback(INITIAL_USERS), 0);
       }
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'users');
+      callback(INITIAL_USERS);
     }
   );
 }
@@ -304,15 +343,16 @@ export async function createEmployeeInFirestore(user: UserProfile) {
 
 export async function updateUserInFirestore(userId: string, data: Partial<UserProfile>) {
   try {
+    const cleaned = cleanFirestorePayload(data);
     const ref = doc(db, 'users', userId);
     await setDoc(ref, {
-      ...data,
+      ...cleaned,
       updatedAt: new Date().toISOString(),
     }, { merge: true });
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
-    throw error;
+    return false;
   }
 }
 
@@ -506,17 +546,36 @@ export function subscribeToAttendance(callback: (records: AttendanceRecord[]) =>
     q,
     (snapshot) => {
       if (!snapshot.empty) {
-        const records: AttendanceRecord[] = [];
+        const firestoreMap = new Map<string, AttendanceRecord>();
         snapshot.forEach((docSnap) => {
-          records.push({ id: docSnap.id, ...(docSnap.data() as Omit<AttendanceRecord, 'id'>) });
+          firestoreMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<AttendanceRecord, 'id'>) });
         });
-        setTimeout(() => callback(records), 0);
+
+        const merged: AttendanceRecord[] = [];
+        const seenIds = new Set<string>();
+
+        // Add Firestore attendance records
+        firestoreMap.forEach((rec, id) => {
+          merged.push(rec);
+          seenIds.add(id);
+        });
+
+        // Add initial attendance records for all other employees
+        INITIAL_ATTENDANCE_RECORDS.forEach((initRec) => {
+          if (!seenIds.has(initRec.id)) {
+            merged.push(initRec);
+            seenIds.add(initRec.id);
+          }
+        });
+
+        setTimeout(() => callback(merged), 0);
       } else {
-        setTimeout(() => callback([]), 0);
+        setTimeout(() => callback(INITIAL_ATTENDANCE_RECORDS), 0);
       }
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'attendance');
+      callback(INITIAL_ATTENDANCE_RECORDS);
     }
   );
 }
@@ -584,11 +643,27 @@ export function subscribeToDeductions(callback: (deductions: SalaryDeduction[]) 
     q,
     (snapshot) => {
       if (!snapshot.empty) {
-        const deductions: SalaryDeduction[] = [];
+        const firestoreMap = new Map<string, SalaryDeduction>();
         snapshot.forEach((docSnap) => {
-          deductions.push({ id: docSnap.id, ...(docSnap.data() as Omit<SalaryDeduction, 'id'>) });
+          firestoreMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<SalaryDeduction, 'id'>) });
         });
-        setTimeout(() => callback(deductions), 0);
+
+        const merged: SalaryDeduction[] = [];
+        const seenIds = new Set<string>();
+
+        firestoreMap.forEach((ded, id) => {
+          merged.push(ded);
+          seenIds.add(id);
+        });
+
+        INITIAL_DEDUCTIONS.forEach((initDed) => {
+          if (!seenIds.has(initDed.id)) {
+            merged.push(initDed);
+            seenIds.add(initDed.id);
+          }
+        });
+
+        setTimeout(() => callback(merged), 0);
       } else {
         setTimeout(() => callback(INITIAL_DEDUCTIONS), 0);
       }
@@ -619,17 +694,30 @@ export async function saveSalaryDeduction(deduction: SalaryDeduction): Promise<b
 export async function waiveSalaryDeduction(
   deductionId: string,
   waivedBy: string,
-  waivedReason: string
+  waivedReason: string,
+  currentData?: SalaryDeduction
 ): Promise<boolean> {
   try {
     const ref = doc(db, 'deductions', deductionId);
-    await updateDoc(ref, {
-      status: 'waived',
-      waivedBy,
-      waivedReason,
-      waivedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
+    const initialMatch = INITIAL_DEDUCTIONS.find((d) => d.id === deductionId);
+    const basePayload = currentData
+      ? cleanFirestorePayload(currentData)
+      : initialMatch
+      ? cleanFirestorePayload(initialMatch)
+      : {};
+
+    await setDoc(
+      ref,
+      {
+        ...basePayload,
+        status: 'waived',
+        waivedBy,
+        waivedReason,
+        waivedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `deductions/${deductionId}`);
@@ -637,16 +725,31 @@ export async function waiveSalaryDeduction(
   }
 }
 
-export async function restoreSalaryDeduction(deductionId: string): Promise<boolean> {
+export async function restoreSalaryDeduction(
+  deductionId: string,
+  currentData?: SalaryDeduction
+): Promise<boolean> {
   try {
     const ref = doc(db, 'deductions', deductionId);
-    await updateDoc(ref, {
-      status: 'applied',
-      waivedBy: null,
-      waivedReason: null,
-      waivedAt: null,
-      updatedAt: new Date().toISOString(),
-    });
+    const initialMatch = INITIAL_DEDUCTIONS.find((d) => d.id === deductionId);
+    const basePayload = currentData
+      ? cleanFirestorePayload(currentData)
+      : initialMatch
+      ? cleanFirestorePayload(initialMatch)
+      : {};
+
+    await setDoc(
+      ref,
+      {
+        ...basePayload,
+        status: 'applied',
+        waivedBy: null,
+        waivedReason: null,
+        waivedAt: null,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `deductions/${deductionId}`);
@@ -671,17 +774,30 @@ export async function deleteSalaryDeduction(deductionId: string): Promise<boolea
 export async function waiveAttendanceLateRecord(
   attendanceId: string,
   waivedBy: string,
-  waivedReason: string
+  waivedReason: string,
+  currentData?: AttendanceRecord
 ): Promise<boolean> {
   try {
     const ref = doc(db, 'attendance', attendanceId);
-    await updateDoc(ref, {
-      isLateDeductionWaived: true,
-      waivedBy,
-      waivedReason,
-      waivedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
+    const initialMatch = INITIAL_ATTENDANCE_RECORDS.find((r) => r.id === attendanceId);
+    const basePayload = currentData
+      ? cleanFirestorePayload(currentData)
+      : initialMatch
+      ? cleanFirestorePayload(initialMatch)
+      : {};
+
+    await setDoc(
+      ref,
+      {
+        ...basePayload,
+        isLateDeductionWaived: true,
+        waivedBy,
+        waivedReason,
+        waivedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `attendance/${attendanceId}`);
@@ -692,19 +808,90 @@ export async function waiveAttendanceLateRecord(
 /**
  * Restores a late punch deduction for a specific attendance record
  */
-export async function restoreAttendanceLateRecord(attendanceId: string): Promise<boolean> {
+export async function restoreAttendanceLateRecord(
+  attendanceId: string,
+  currentData?: AttendanceRecord
+): Promise<boolean> {
   try {
     const ref = doc(db, 'attendance', attendanceId);
-    await updateDoc(ref, {
-      isLateDeductionWaived: false,
-      waivedBy: null,
-      waivedReason: null,
-      waivedAt: null,
-      updatedAt: new Date().toISOString(),
-    });
+    const initialMatch = INITIAL_ATTENDANCE_RECORDS.find((r) => r.id === attendanceId);
+    const basePayload = currentData
+      ? cleanFirestorePayload(currentData)
+      : initialMatch
+      ? cleanFirestorePayload(initialMatch)
+      : {};
+
+    await setDoc(
+      ref,
+      {
+        ...basePayload,
+        isLateDeductionWaived: false,
+        waivedBy: null,
+        waivedReason: null,
+        waivedAt: null,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `attendance/${attendanceId}`);
+    throw error;
+  }
+}
+
+// ----------------------------------------------------
+// SALARY ADVANCES & INSTALLMENTS (FIRESTORE SYNC)
+// ----------------------------------------------------
+export function subscribeToSalaryAdvances(callback: (advances: SalaryAdvance[]) => void) {
+  const q = collection(db, 'advances');
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      if (!snapshot.empty) {
+        const firestoreMap = new Map<string, SalaryAdvance>();
+        snapshot.forEach((docSnap) => {
+          firestoreMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<SalaryAdvance, 'id'>) });
+        });
+
+        const merged: SalaryAdvance[] = [];
+        const seenIds = new Set<string>();
+
+        firestoreMap.forEach((adv, id) => {
+          merged.push(adv);
+          seenIds.add(id);
+        });
+
+        INITIAL_SALARY_ADVANCES.forEach((initAdv) => {
+          if (!seenIds.has(initAdv.id)) {
+            merged.push(initAdv);
+            seenIds.add(initAdv.id);
+          }
+        });
+
+        setTimeout(() => callback(merged), 0);
+      } else {
+        setTimeout(() => callback(INITIAL_SALARY_ADVANCES), 0);
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'advances');
+      callback(INITIAL_SALARY_ADVANCES);
+    }
+  );
+}
+
+export async function saveSalaryAdvance(advance: SalaryAdvance): Promise<boolean> {
+  try {
+    const ref = doc(db, 'advances', advance.id);
+    const payload = cleanFirestorePayload({
+      ...advance,
+      updatedAt: new Date().toISOString(),
+    });
+    await setDoc(ref, payload, { merge: true });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `advances/${advance.id}`);
     throw error;
   }
 }

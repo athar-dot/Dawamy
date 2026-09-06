@@ -53,7 +53,16 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
   // Image Upload
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [previewSignature, setPreviewSignature] = useState<string | null>(currentUser?.signatureDataUrl || null);
+
+  // Live preview for typed mode
+  useEffect(() => {
+    if (activeMode === 'type' && typedName.trim()) {
+      const generated = generateTypedSignature();
+      setPreviewSignature(generated);
+    }
+  }, [activeMode, typedName, penColor]);
 
   // Initialize canvas
   useEffect(() => {
@@ -196,29 +205,45 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
 
   // Save Signature
   const handleSave = async () => {
+    setErrorMessage(null);
     let finalSignatureUrl = '';
     const type: 'drawn' | 'uploaded' | 'typed' =
       activeMode === 'draw' ? 'drawn' : activeMode === 'upload' ? 'uploaded' : 'typed';
 
     if (activeMode === 'draw') {
       const canvas = canvasRef.current;
-      if (!canvas || !hasDrawn) return;
-      finalSignatureUrl = canvas.toDataURL('image/png');
+      if (canvas && hasDrawn) {
+        finalSignatureUrl = canvas.toDataURL('image/png');
+      } else if (previewSignature) {
+        finalSignatureUrl = previewSignature;
+      } else {
+        setErrorMessage(isAr ? 'يرجى رسم التوقيع داخل المربع أولاً أو اختيار التوليد بالاسم' : 'Please draw your signature first or select typed name mode');
+        return;
+      }
     } else if (activeMode === 'upload') {
-      if (!uploadedImage) return;
+      if (!uploadedImage) {
+        setErrorMessage(isAr ? 'يرجى رفع ملف صورة التوقيع أولاً' : 'Please upload a signature image first');
+        return;
+      }
       finalSignatureUrl = uploadedImage;
     } else {
       finalSignatureUrl = generateTypedSignature();
     }
 
-    if (!finalSignatureUrl) return;
+    if (!finalSignatureUrl) {
+      setErrorMessage(isAr ? 'تعذر توليد التوقيع، يرجى المحاولة مرة أخرى' : 'Failed to generate signature, please try again');
+      return;
+    }
 
     setIsSaving(true);
     try {
-      await onSaveSignature(finalSignatureUrl, type, typedTitle.trim());
-      onClose();
+      const ok = await onSaveSignature(finalSignatureUrl, type, typedTitle.trim());
+      if (ok !== false) {
+        onClose();
+      }
     } catch (err) {
       console.error('Error saving signature:', err);
+      setErrorMessage(isAr ? 'حدث خطأ أثناء حفظ التوقيع، تم حفظه محلياً في المتصفح' : 'Error saving signature, saved locally');
     } finally {
       setIsSaving(false);
     }
@@ -529,6 +554,20 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Error Alert */}
+        {errorMessage && (
+          <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium animate-in fade-in flex items-center justify-between">
+            <span>{errorMessage}</span>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="p-1 hover:bg-red-100 rounded-lg text-red-500 transition"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#E5E2D9]">

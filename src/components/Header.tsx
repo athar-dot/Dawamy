@@ -35,6 +35,7 @@ interface HeaderProps {
   onGoogleSignOut?: () => void;
   firebaseAuthUser?: { email: string | null; displayName: string | null; photoURL?: string | null; uid?: string } | null;
   onOpenSignatureModal?: () => void;
+  onOpenScheduleModal?: () => void;
 }
 
 function safeFormatNotifTimestamp(timestamp: unknown, isAr: boolean): string {
@@ -105,6 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
   onGoogleSignOut,
   firebaseAuthUser,
   onOpenSignatureModal,
+  onOpenScheduleModal,
 }) => {
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifFilter, setNotifFilter] = useState<'all' | 'unread'>('all');
@@ -449,6 +451,22 @@ export const Header: React.FC<HeaderProps> = ({
                 {currentUser.signatureDataUrl && (
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
                 )}
+              </button>
+            )}
+
+            {/* Company Logo & Identity Settings Button */}
+            {onOpenScheduleModal && (
+              <button
+                type="button"
+                id="btn-header-company-identity"
+                onClick={onOpenScheduleModal}
+                title={isAr ? 'شعار، ختم وبيانات الشركة (تظهر في التقارير والسندات)' : 'Company Logo, Stamp & Official Details'}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#E9EDD9] hover:bg-[#D9E0D2] text-[#2D3628] border border-[#D9E0D2] text-xs font-bold transition shadow-xs cursor-pointer"
+              >
+                <Building2 className="w-3.5 h-3.5 text-[#5E7153]" />
+                <span className="truncate max-w-[110px]">
+                  {isAr ? 'شعار وبيانات الشركة' : 'Company Logo & Data'}
+                </span>
               </button>
             )}
 

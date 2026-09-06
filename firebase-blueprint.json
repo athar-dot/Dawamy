@@ -124,6 +124,40 @@
         "apiKey": { "type": "string", "maxLength": 128 }
       },
       "required": ["id", "name", "ipAddress", "port", "protocol"]
+    },
+    "SalaryDeduction": {
+      "title": "SalaryDeduction",
+      "description": "Salary deductions, disciplinary penalties, and waiver approvals",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 128 },
+        "month": { "type": "string", "maxLength": 32 },
+        "type": { "type": "string", "enum": ["late_punch", "penalty_disciplinary", "unexcused_absence", "early_departure", "advance_installment", "other"] },
+        "title": { "type": "string", "maxLength": 200 },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["applied", "waived", "pending_review"] },
+        "reason": { "type": "string", "maxLength": 1000 },
+        "waivedBy": { "type": "string", "maxLength": 128 },
+        "waivedReason": { "type": "string", "maxLength": 1000 },
+        "waivedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "month", "type", "title", "amount", "status"]
+    },
+    "SalaryAdvance": {
+      "title": "SalaryAdvance",
+      "description": "Salary advances and loans schedule",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "advanceNumber": { "type": "string", "maxLength": 64 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 128 },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending_approval", "active", "completed", "cancelled", "waived"] }
+      },
+      "required": ["id", "advanceNumber", "userId", "amount", "status"]
     }
   },
   "firestore": {
@@ -150,6 +184,14 @@
     "/biometric_devices/{deviceId}": {
       "schema": "BiometricDevice",
       "description": "Biometric devices configuration and status"
+    },
+    "/deductions/{deductionId}": {
+      "schema": "SalaryDeduction",
+      "description": "Salary deductions and disciplinary penalties"
+    },
+    "/advances/{advanceId}": {
+      "schema": "SalaryAdvance",
+      "description": "Salary advances and loans"
     }
   }
 }
