@@ -88,6 +88,7 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
 
   // Form State
   const [formTitle, setFormTitle] = useState('');
+  const [formDueDate, setFormDueDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [formDueTime, setFormDueTime] = useState('02:00 PM');
   const [formPriority, setFormPriority] = useState<'high' | 'medium' | 'normal'>('medium');
   const [formCategory, setFormCategory] = useState(CATEGORIES[0].ar);
@@ -116,15 +117,14 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
 
   // Toggle completion
   const handleToggleComplete = async (task: DailyTaskItem) => {
+    const nowStr = `${new Date().toISOString().split('T')[0]} • ${new Date().toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' })}`;
     const updated = tasks.map((t) => {
       if (t.id === task.id) {
         const newCompleted = !t.completed;
         return {
           ...t,
           completed: newCompleted,
-          completedAt: newCompleted
-            ? new Date().toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' })
-            : undefined,
+          completedAt: newCompleted ? nowStr : undefined,
         };
       }
       return t;
@@ -135,8 +135,8 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
     if (!task.completed) {
       showReminder(
         isAr
-          ? `🎉 أحسنت! تم إنجاز المهمة: "${task.title}"`
-          : `🎉 Great job! Completed: "${task.title}"`
+          ? `🎉 أحسنت! تم إنجاز المهمة: "${task.title}" في ${nowStr}`
+          : `🎉 Great job! Completed: "${task.title}" at ${nowStr}`
       );
     }
   };
@@ -145,6 +145,7 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
   const handleOpenAdd = () => {
     setEditingTask(null);
     setFormTitle('');
+    setFormDueDate(new Date().toISOString().split('T')[0]);
     setFormDueTime('02:00 PM');
     setFormPriority('medium');
     setFormCategory(isAr ? CATEGORIES[0].ar : CATEGORIES[0].en);
@@ -156,6 +157,7 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
   const handleOpenEdit = (task: DailyTaskItem) => {
     setEditingTask(task);
     setFormTitle(task.title);
+    setFormDueDate(task.dueDate || new Date().toISOString().split('T')[0]);
     setFormDueTime(task.dueTime || '02:00 PM');
     setFormPriority(task.priority || 'medium');
     setFormCategory(task.category || (isAr ? CATEGORIES[0].ar : CATEGORIES[0].en));
@@ -184,6 +186,7 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
           return {
             ...t,
             title: formTitle.trim(),
+            dueDate: formDueDate.trim(),
             dueTime: formDueTime.trim(),
             priority: formPriority,
             category: formCategory,
@@ -197,6 +200,7 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
       const newTask: DailyTaskItem = {
         id: `task-${Date.now()}`,
         title: formTitle.trim(),
+        dueDate: formDueDate.trim() || new Date().toISOString().split('T')[0],
         dueTime: formDueTime.trim() || '05:00 PM',
         completed: false,
         priority: formPriority,
@@ -211,8 +215,8 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
     setIsModalOpen(false);
     showReminder(
       editingTask
-        ? (isAr ? 'تم تعديل المهمة وموعد التسليم بنجاح' : 'Task and deadline updated')
-        : (isAr ? 'تمت إضافة المهمة وموعد تسليمها لليوم' : 'New task scheduled for today')
+        ? (isAr ? 'تم تعديل تاريخ وزمن المهمة وموعد التسليم بنجاح' : 'Task date, deadline and details updated')
+        : (isAr ? 'تمت إضافة المهمة مع تحديد تاريخ وزمن التسليم بنجاح' : 'New task scheduled with date & time')
     );
   };
 
@@ -548,34 +552,40 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
                       </p>
                     )}
 
-                    {/* Completion timestamp if done */}
+                    {/* Completion timestamp with date and time if done */}
                     {isDone && task.completedAt && (
-                      <div className="text-[11px] text-[#5E7153] font-medium flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{isAr ? `تم الإنجاز الساعة: ${task.completedAt}` : `Completed at: ${task.completedAt}`}</span>
+                      <div className="text-[11px] text-[#5E7153] font-medium flex items-center gap-1.5 bg-[#E9EDD9]/60 px-2.5 py-1 rounded-lg w-fit">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#5E7153]" />
+                        <span>{isAr ? `تاريخ ووقت الإنجاز: ${task.completedAt}` : `Completed at: ${task.completedAt}`}</span>
                       </div>
                     )}
                   </div>
 
                 </div>
 
-                {/* Right: Due Time & Action Buttons */}
-                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E5E2D9]">
+                {/* Right: Due Date & Time & Action Buttons */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between sm:justify-end gap-2.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E5E2D9]">
                   
-                  {/* Due Time Pill (موعد التسليم) */}
+                  {/* Due Date & Time Pill (تاريخ المهمة مع الزمن) */}
                   <div
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
                       isDone
                         ? 'bg-[#EFECE4] text-[#65635E] border-[#E5E2D9]'
                         : task.priority === 'high'
                         ? 'bg-[#FEF2F2] text-[#991B1B] border-[#FECACA] ring-1 ring-[#EF4444]/20'
                         : 'bg-[#E9EDD9] text-[#2D3628] border-[#D9E0D2]'
                     }`}
-                    title={isAr ? 'موعد التسليم المحدد لليوم' : 'Target delivery deadline'}
+                    title={isAr ? 'تاريخ وزمن التسليم المحدد' : 'Target delivery date & time'}
                   >
-                    <Clock className="w-3.5 h-3.5 text-[#5E7153]" />
-                    <span className="text-[11px] text-[#65635E] font-normal">{isAr ? 'التسليم:' : 'Due:'}</span>
-                    <span className="font-mono">{task.dueTime || '05:00 PM'}</span>
+                    <div className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-[#5E7153]" />
+                      <span className="font-mono text-[11px]">{task.dueDate || new Date().toISOString().split('T')[0]}</span>
+                    </div>
+                    <span className="text-stone-400">|</span>
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-[#5E7153]" />
+                      <span className="font-mono text-[11px]">{task.dueTime || '05:00 PM'}</span>
+                    </div>
                   </div>
 
                   {/* Actions: Edit & Delete */}
@@ -669,24 +679,52 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
                 />
               </div>
 
-              {/* Due Time (موعد التسليم اليوم) */}
-              <div>
-                <label className="block text-xs font-bold text-[#2D3628] mb-1.5 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-[#5E7153]" />
-                    {isAr ? 'موعد التسليم المحدد لليوم *' : 'Target Delivery Time *'}
-                  </span>
-                  <span className="text-[10px] text-[#65635E]">{isAr ? 'اختر أو اكتب التوقيت' : 'Pick preset or custom'}</span>
-                </label>
+              {/* Due Date & Time (تاريخ المهمة وزمنها) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#2D3628] mb-1.5 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-[#5E7153]" />
+                    {isAr ? 'تاريخ المهمة *' : 'Task Date *'}
+                  </label>
+                  <input
+                    type="date"
+                    id="input-task-due-date"
+                    required
+                    value={formDueDate}
+                    onChange={(e) => setFormDueDate(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-[#FAF9F6] border border-[#E5E2D9] rounded-xl text-xs sm:text-sm text-[#2D3628] font-mono focus:ring-2 focus:ring-[#5E7153] focus:outline-none"
+                  />
+                </div>
 
-                {/* Preset Pills */}
-                <div className="grid grid-cols-3 gap-2 mb-2">
+                <div>
+                  <label className="block text-xs font-bold text-[#2D3628] mb-1.5 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#5E7153]" />
+                    {isAr ? 'زمن الاستحقاق *' : 'Due Time *'}
+                  </label>
+                  <input
+                    type="text"
+                    id="input-task-due-time"
+                    required
+                    value={formDueTime}
+                    onChange={(e) => setFormDueTime(e.target.value)}
+                    placeholder="e.g. 02:30 PM"
+                    className="w-full px-3.5 py-2 bg-[#FAF9F6] border border-[#E5E2D9] rounded-xl text-xs sm:text-sm text-[#2D3628] font-mono focus:ring-2 focus:ring-[#5E7153] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Preset Time Pills */}
+              <div>
+                <label className="block text-[11px] font-semibold text-[#65635E] mb-1">
+                  {isAr ? 'أوقات تسليم مقترحة سريعة:' : 'Quick preset times:'}
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
                   {PRESET_DUE_TIMES.map((time) => (
                     <button
                       type="button"
                       key={time.value}
                       onClick={() => setFormDueTime(time.value)}
-                      className={`py-1.5 px-2 rounded-xl text-xs font-semibold border transition ${
+                      className={`py-1 px-2 rounded-lg text-[11px] font-semibold border transition ${
                         formDueTime === time.value
                           ? 'bg-[#E9EDD9] border-[#5E7153] text-[#2D3628]'
                           : 'bg-[#FAF9F6] border-[#E5E2D9] text-[#65635E] hover:bg-[#EFECE4]'
@@ -696,16 +734,6 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
                     </button>
                   ))}
                 </div>
-
-                <input
-                  type="text"
-                  id="input-task-due-time"
-                  required
-                  value={formDueTime}
-                  onChange={(e) => setFormDueTime(e.target.value)}
-                  placeholder="e.g. 02:30 PM"
-                  className="w-full px-3.5 py-2 bg-[#FAF9F6] border border-[#E5E2D9] rounded-xl text-xs sm:text-sm text-[#2D3628] font-mono focus:ring-2 focus:ring-[#5E7153] focus:outline-none"
-                />
               </div>
 
               {/* Priority & Category */}

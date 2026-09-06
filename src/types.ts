@@ -9,13 +9,14 @@ export type WorkStatus = 'in_office' | 'wfh_active' | 'deep_focus' | 'in_break' 
 export interface DailyTaskItem {
   id: string;
   title: string;
-  dueTime: string; // e.g. "11:30 AM", "02:00 PM", "16:00"
+  dueDate?: string; // e.g. "2026-09-06"
+  dueTime: string; // e.g. "11:30 AM", "02:00 PM"
   completed: boolean;
   priority: 'high' | 'medium' | 'normal';
   category?: string;
   notes?: string;
   createdAt?: string;
-  completedAt?: string;
+  completedAt?: string; // e.g. "2026-09-06 04:30 PM"
 }
 
 export interface UserProfile {
