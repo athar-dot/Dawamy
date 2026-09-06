@@ -223,8 +223,8 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Right Controls: Language, Notifications, Profile */}
           <div className="flex items-center gap-2 sm:gap-3">
 
-            {/* Language toggle (Bilingual Segmented Switcher) */}
-            <div className="flex items-center bg-[#EFECE4] p-1 rounded-xl border border-[#E5E2D9]">
+            {/* Language toggle: Compact single button on mobile (<sm), Segmented on sm+ */}
+            <div className="hidden sm:flex items-center bg-[#EFECE4] p-1 rounded-xl border border-[#E5E2D9]">
               <button
                 id="btn-lang-ar"
                 onClick={() => lang !== 'ar' && onToggleLang()}
@@ -250,6 +250,16 @@ export const Header: React.FC<HeaderProps> = ({
                 English
               </button>
             </div>
+            {/* Mobile single language toggle button */}
+            <button
+              id="btn-lang-mobile-toggle"
+              onClick={onToggleLang}
+              className="sm:hidden px-2 py-1.5 rounded-xl bg-[#EFECE4] hover:bg-[#E5E2D9] text-[#2D3628] border border-[#E5E2D9] text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1 shrink-0"
+              title={isAr ? 'Switch to English' : 'التحويل للعربية'}
+            >
+              <Languages className="w-3.5 h-3.5 text-[#5E7153]" />
+              <span>{isAr ? 'EN' : 'عربي'}</span>
+            </button>
 
             {/* Notifications trigger */}
             <div ref={notifRef} className="relative z-50">

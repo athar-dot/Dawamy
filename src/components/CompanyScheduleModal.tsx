@@ -12,6 +12,9 @@ import {
   Sliders,
   Sparkles,
   Info,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
 } from 'lucide-react';
 import { CompanyWorkSchedule } from '../types';
 import {
@@ -65,6 +68,38 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
 
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        setErrorMsg(isAr ? 'حجم شعار الشركة كبير جداً، يرجى اختيار صورة أقل من 2 ميجابايت' : 'Logo file is too large. Max 2MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLogoUrl(reader.result as string);
+        setErrorMsg(null);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleStampFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        setErrorMsg(isAr ? 'حجم الختم كبير جداً، يرجى اختيار صورة أقل من 2 ميجابايت' : 'Stamp file is too large. Max 2MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setStampUrl(reader.result as string);
+        setErrorMsg(null);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -241,32 +276,88 @@ export const CompanyScheduleModal: React.FC<CompanyScheduleModalProps> = ({
                 />
               </div>
 
-              {/* Logo URL */}
-              <div>
+              {/* Logo Upload */}
+              <div className="flex flex-col">
                 <label className="block text-xs font-bold text-[#2D3628] mb-1">
-                  {isAr ? 'رابط شعار الشركة (Logo URL)' : 'Company Logo URL'}
+                  {isAr ? 'شعار الشركة (اختياري)' : 'Company Logo (Optional)'}
                 </label>
-                <input
-                  type="url"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  placeholder="https://example.com/logo.png"
-                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
-                />
+                {logoUrl ? (
+                  <div className="flex items-center gap-3 p-3 bg-white border border-[#E5E2D9] rounded-xl">
+                    <img
+                      src={logoUrl}
+                      alt="Logo Preview"
+                      referrerPolicy="no-referrer"
+                      className="w-12 h-12 rounded-lg object-contain border border-[#E5E2D9] bg-slate-50"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-[#65635E] truncate">{isAr ? 'تم رفع الشعار' : 'Logo Uploaded'}</p>
+                      <button
+                        type="button"
+                        onClick={() => setLogoUrl('')}
+                        className="text-[11px] font-bold text-rose-600 hover:text-rose-800 flex items-center gap-1 mt-0.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{isAr ? 'إزالة الشعار' : 'Remove Logo'}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center border border-dashed border-[#E5E2D9] hover:border-[#5E7153]/50 rounded-xl p-3 bg-white cursor-pointer hover:bg-[#FAF9F6] transition group">
+                    <div className="flex flex-col items-center gap-1 text-center">
+                      <Upload className="w-5 h-5 text-[#65635E] group-hover:text-[#5E7153]" />
+                      <span className="text-[11px] font-bold text-[#2D3628]">{isAr ? 'اضغط لرفع شعار الشركة' : 'Click to upload logo'}</span>
+                      <span className="text-[9px] text-[#65635E]">{isAr ? 'PNG, JPG (أقصى حجم 2MB)' : 'PNG, JPG (Max 2MB)'}</span>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                )}
               </div>
 
-              {/* Stamp URL */}
-              <div>
+              {/* Stamp Upload */}
+              <div className="flex flex-col">
                 <label className="block text-xs font-bold text-[#2D3628] mb-1">
-                  {isAr ? 'رابط الختم الرسمي / التوقيع (Stamp URL)' : 'Official Stamp URL'}
+                  {isAr ? 'الختم الرسمي / التوقيع (اختياري)' : 'Official Stamp / Signature (Optional)'}
                 </label>
-                <input
-                  type="url"
-                  value={stampUrl}
-                  onChange={(e) => setStampUrl(e.target.value)}
-                  placeholder="https://example.com/stamp.png"
-                  className="w-full px-3 py-2 rounded-xl border border-[#E5E2D9] text-xs font-medium bg-white text-[#2D3628] focus:outline-none focus:ring-2 focus:ring-[#5E7153]/40"
-                />
+                {stampUrl ? (
+                  <div className="flex items-center gap-3 p-3 bg-white border border-[#E5E2D9] rounded-xl">
+                    <img
+                      src={stampUrl}
+                      alt="Stamp Preview"
+                      referrerPolicy="no-referrer"
+                      className="w-12 h-12 rounded-lg object-contain border border-[#E5E2D9] bg-slate-50"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-[#65635E] truncate">{isAr ? 'تم رفع الختم' : 'Stamp Uploaded'}</p>
+                      <button
+                        type="button"
+                        onClick={() => setStampUrl('')}
+                        className="text-[11px] font-bold text-rose-600 hover:text-rose-800 flex items-center gap-1 mt-0.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{isAr ? 'إزالة الختم' : 'Remove Stamp'}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center border border-dashed border-[#E5E2D9] hover:border-[#5E7153]/50 rounded-xl p-3 bg-white cursor-pointer hover:bg-[#FAF9F6] transition group">
+                    <div className="flex flex-col items-center gap-1 text-center">
+                      <Upload className="w-5 h-5 text-[#65635E] group-hover:text-[#5E7153]" />
+                      <span className="text-[11px] font-bold text-[#2D3628]">{isAr ? 'اضغط لرفع الختم الرسمي' : 'Click to upload stamp'}</span>
+                      <span className="text-[9px] text-[#65635E]">{isAr ? 'PNG, JPG (أقصى حجم 2MB)' : 'PNG, JPG (Max 2MB)'}</span>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleStampFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                )}
               </div>
 
               {/* Commercial Reg No */}

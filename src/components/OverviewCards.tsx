@@ -114,35 +114,35 @@ export const OverviewCards: React.FC<OverviewCardsProps> = ({
           </div>
 
           {/* Right Action Buttons */}
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap w-full lg:w-auto">
+          <div className="grid grid-cols-1 min-[520px]:grid-cols-3 lg:flex lg:items-center gap-2 sm:gap-3 w-full lg:w-auto">
             {/* Virtual Check-in modal trigger */}
             <button
               id="btn-virtual-checkin"
               onClick={onOpenCheckinModal}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#43423E] border border-[#E5E2D9] hover:border-[#5E7153]/50 text-xs sm:text-sm font-semibold transition shadow-sm group"
+              className="w-full lg:w-auto flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl bg-[#FAF9F6] hover:bg-[#EFECE4] text-[#43423E] border border-[#E5E2D9] hover:border-[#5E7153]/50 text-xs sm:text-sm font-semibold transition shadow-sm group cursor-pointer"
             >
-              <Clock className="w-4 h-4 text-[#5E7153] group-hover:scale-110 transition-transform" />
-              <span>{isAr ? 'تسجيل الحضور الافتراضي' : 'Virtual Check-In'}</span>
+              <Clock className="w-4 h-4 text-[#5E7153] group-hover:scale-110 transition-transform shrink-0" />
+              <span className="whitespace-nowrap">{isAr ? 'تسجيل الحضور الافتراضي' : 'Virtual Check-In'}</span>
             </button>
 
             {/* AI Standup helper */}
             <button
               id="btn-ai-standup-trigger"
               onClick={onOpenStandupModal}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#E9EDD9] hover:bg-[#D9E0D2] text-[#2D3628] border border-[#D9E0D2] text-xs sm:text-sm font-semibold transition shadow-sm group"
+              className="w-full lg:w-auto flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl bg-[#E9EDD9] hover:bg-[#D9E0D2] text-[#2D3628] border border-[#D9E0D2] text-xs sm:text-sm font-semibold transition shadow-sm group cursor-pointer"
             >
-              <Sparkles className="w-4 h-4 text-[#5E7153] group-hover:rotate-12 transition-transform" />
-              <span>{isAr ? 'موجز الستاند-أب الذكي' : 'AI Daily Standup'}</span>
+              <Sparkles className="w-4 h-4 text-[#5E7153] group-hover:rotate-12 transition-transform shrink-0" />
+              <span className="whitespace-nowrap">{isAr ? 'موجز الستاند-أب الذكي' : 'AI Standup'}</span>
             </button>
 
             {/* Primary Submit New Request */}
             <button
               id="btn-new-request-trigger"
               onClick={onOpenNewRequest}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#5E7153] hover:bg-[#4E5F44] text-white font-bold text-xs sm:text-sm shadow-md shadow-[#5E7153]/20 transition group"
+              className="w-full lg:w-auto flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-[#5E7153] hover:bg-[#4E5F44] text-white font-bold text-xs sm:text-sm shadow-md shadow-[#5E7153]/20 transition group cursor-pointer"
             >
-              <PlusCircle className="w-4 h-4 text-white group-hover:scale-110 transition-transform" />
-              <span>{isAr ? 'تقديم طلب جديد' : 'New Request'}</span>
+              <PlusCircle className="w-4 h-4 text-white group-hover:scale-110 transition-transform shrink-0" />
+              <span className="whitespace-nowrap">{isAr ? 'تقديم طلب جديد' : 'New Request'}</span>
             </button>
           </div>
 

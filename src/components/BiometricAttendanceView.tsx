@@ -425,18 +425,18 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
       )}
 
       {/* Sub-Navigation Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E2D9] pb-3">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E5E2D9] pb-3">
+        <div className="flex items-center gap-2 overflow-x-auto max-w-full pb-1 scrollbar-thin scrollbar-thumb-[#D9E0D2] scrollbar-track-transparent">
           <button
             type="button"
             onClick={() => setActiveSubTab('records')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
               activeSubTab === 'records'
                 ? 'bg-[#2D3628] text-white shadow-sm'
                 : 'bg-white text-[#65635E] hover:bg-[#FAF9F6] border border-[#E5E2D9]'
             }`}
           >
-            <Clock className="w-4 h-4" />
+            <Clock className="w-4 h-4 shrink-0" />
             <span>{isAr ? 'سجل البصمات والحضور' : 'Live Attendance Log'}</span>
             <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-[#5E7153]/30">
               {attendanceRecords.length}
@@ -447,13 +447,13 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
             type="button"
             id="btn-tab-hr-report"
             onClick={() => setActiveSubTab('hr_schedule_report')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
               activeSubTab === 'hr_schedule_report'
                 ? 'bg-[#5E7153] text-white shadow-sm'
                 : 'bg-white text-[#65635E] hover:bg-[#FAF9F6] border border-[#E5E2D9]'
             }`}
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{isAr ? 'كشف ساعات وتأخيرات الدوام (HR)' : 'HR Shift & Shortage Audit'}</span>
             <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-900 font-extrabold">
               {isAr ? 'كشف شامل وفردي' : 'Audit'}
@@ -463,13 +463,13 @@ export const BiometricAttendanceView: React.FC<BiometricAttendanceViewProps> = (
           <button
             type="button"
             onClick={() => setActiveSubTab('devices')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
               activeSubTab === 'devices'
                 ? 'bg-[#2D3628] text-white shadow-sm'
                 : 'bg-white text-[#65635E] hover:bg-[#FAF9F6] border border-[#E5E2D9]'
             }`}
           >
-            <Server className="w-4 h-4" />
+            <Server className="w-4 h-4 shrink-0" />
             <span>{isAr ? 'الأجهزة المتصلة والربط' : 'Biometric Devices'}</span>
             <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-[#5E7153]/30">
               {biometricDevices.length}

@@ -51,6 +51,150 @@ const CATEGORIES = [
   { ar: 'مهام عامة', en: 'General Task', color: 'bg-[#F1F5F9] text-[#334155] border-[#E2E8F0]' },
 ];
 
+// Helper functions for task duration and deadline comparison
+const parseDateAndTime = (datePart: string, timePart: string): Date => {
+  let cleanTime = timePart
+    .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString())
+    .replace(/ص/g, 'AM')
+    .replace(/م/g, 'PM')
+    .trim();
+
+  const d = new Date(datePart);
+  const match = cleanTime.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const ampm = match[3] ? match[3].toUpperCase() : null;
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    d.setHours(hours, minutes, 0, 0);
+  } else {
+    d.setHours(12, 0, 0, 0);
+  }
+  return d;
+};
+
+const parseToDate = (dateStr?: string, timeFallback?: string): Date | null => {
+  if (!dateStr) return null;
+  
+  if (dateStr.includes('T') && dateStr.endsWith('Z')) {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  try {
+    let cleanStr = dateStr
+      .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString())
+      .replace(/ص/g, 'AM')
+      .replace(/م/g, 'PM');
+
+    if (cleanStr.includes(' • ')) {
+      const parts = cleanStr.split(' • ');
+      const datePart = parts[0];
+      const timePart = parts[1];
+      return parseDateAndTime(datePart, timePart);
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr.trim())) {
+      if (timeFallback) {
+        return parseDateAndTime(cleanStr.trim(), timeFallback);
+      }
+      const d = new Date(cleanStr.trim());
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    if (/(\d+):(\d+)\s*(AM|PM|am|pm)?/.test(cleanStr)) {
+      const today = new Date().toISOString().split('T')[0];
+      return parseDateAndTime(today, cleanStr);
+    }
+  } catch (err) {
+    console.error('Error parsing date:', dateStr, err);
+  }
+
+  const parsed = new Date(dateStr);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getTaskTimeTakenReport = (task: DailyTaskItem, isAr: boolean) => {
+  const createdDate = parseToDate(task.createdAt || task.dueDate || new Date().toISOString().split('T')[0], '08:00 AM');
+  const completedDate = parseToDate(task.completedAt);
+  const targetDate = parseToDate(task.dueDate || new Date().toISOString().split('T')[0], task.dueTime || '05:00 PM');
+
+  if (!completedDate || !createdDate || !targetDate) return null;
+
+  // 1. Time taken
+  const diffMs = completedDate.getTime() - createdDate.getTime();
+  const diffMinutesTotal = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+  const takenHrs = Math.floor(diffMinutesTotal / 60);
+  const takenMins = diffMinutesTotal % 60;
+
+  let timeTakenStr = '';
+  if (isAr) {
+    if (takenHrs === 0) {
+      timeTakenStr = `${takenMins} دقيقة`;
+    } else if (takenHrs === 1) {
+      timeTakenStr = `ساعة و ${takenMins} دقيقة`;
+    } else if (takenHrs === 2) {
+      timeTakenStr = `ساعتين و ${takenMins} دقيقة`;
+    } else {
+      timeTakenStr = `${takenHrs} ساعات و ${takenMins} دقيقة`;
+    }
+  } else {
+    timeTakenStr = `${takenHrs > 0 ? `${takenHrs}h ` : ''}${takenMins}m`;
+  }
+
+  // 2. Comparison with deadline
+  const marginMs = targetDate.getTime() - completedDate.getTime();
+  const marginMinutesTotal = Math.floor(marginMs / (1000 * 60));
+  const absMargin = Math.abs(marginMinutesTotal);
+  const marginHrs = Math.floor(absMargin / 60);
+  const marginMins = absMargin % 60;
+
+  let marginStr = '';
+  if (isAr) {
+    if (marginHrs === 0) {
+      marginStr = `${marginMins} دقيقة`;
+    } else if (marginHrs === 1) {
+      marginStr = `ساعة و ${marginMins} دقيقة`;
+    } else if (marginHrs === 2) {
+      marginStr = `ساعتين و ${marginMins} دقيقة`;
+    } else {
+      marginStr = `${marginHrs} ساعات و ${marginMins} دقيقة`;
+    }
+  } else {
+    marginStr = `${marginHrs > 0 ? `${marginHrs}h ` : ''}${marginMins}m`;
+  }
+
+  const isEarly = marginMinutesTotal >= 0;
+
+  // Formatting helper
+  const formatDate = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    let hrs = d.getHours();
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    const ampmAr = hrs >= 12 ? 'م' : 'ص';
+    const ampmEn = hrs >= 12 ? 'PM' : 'AM';
+    const displayHrs = hrs % 12 === 0 ? 12 : hrs % 12;
+    
+    if (isAr) {
+      return `${yyyy}-${mm}-${dd} • ${displayHrs}:${mins} ${ampmAr}`;
+    } else {
+      return `${yyyy}-${mm}-${dd} • ${displayHrs}:${mins} ${ampmEn}`;
+    }
+  };
+
+  return {
+    timeTakenStr,
+    marginStr,
+    isEarly,
+    createdStr: formatDate(createdDate),
+    completedStr: formatDate(completedDate),
+    targetStr: formatDate(targetDate),
+  };
+};
+
 export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
   currentUser,
   onUpdateTasks,
@@ -117,7 +261,7 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
 
   // Toggle completion
   const handleToggleComplete = async (task: DailyTaskItem) => {
-    const nowStr = `${new Date().toISOString().split('T')[0]} • ${new Date().toLocaleTimeString(isAr ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' })}`;
+    const nowStr = new Date().toISOString();
     const updated = tasks.map((t) => {
       if (t.id === task.id) {
         const newCompleted = !t.completed;
@@ -133,10 +277,11 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
     onUpdateTasks(updated);
 
     if (!task.completed) {
+      const displayTime = new Date(nowStr).toLocaleTimeString(isAr ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' });
       showReminder(
         isAr
-          ? `🎉 أحسنت! تم إنجاز المهمة: "${task.title}" في ${nowStr}`
-          : `🎉 Great job! Completed: "${task.title}" at ${nowStr}`
+          ? `🎉 أحسنت! تم إنجاز المهمة: "${task.title}" في الساعة ${displayTime}`
+          : `🎉 Great job! Completed: "${task.title}" at ${displayTime}`
       );
     }
   };
@@ -303,13 +448,19 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
             <CheckSquare className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg sm:text-xl font-bold text-[#2D3628]">
                 {isAr ? 'تذكير مهام اليوم ومواعيد التسليم' : 'Daily Tasks & Deadlines Reminder'}
               </h3>
               <span className="text-[11px] font-bold bg-[#E9EDD9] text-[#2D3628] px-2.5 py-0.5 rounded-full border border-[#D9E0D2] font-mono">
                 {completedCount}/{totalCount} {isAr ? 'منجز' : 'done'}
               </span>
+              {currentUser.todayStatus === 'wfh_active' && (
+                <span className="text-[10px] sm:text-[11px] font-extrabold bg-[#E9EDD9] text-[#5E7153] px-2.5 py-0.5 rounded-full border border-[#D9E0D2] flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#5E7153] animate-pulse" />
+                  <span>{isAr ? 'العمل عن بعد نشط 🏠' : 'Remote Work Active 🏠'}</span>
+                </span>
+              )}
             </div>
             <p className="text-xs text-[#65635E] mt-0.5">
               {isAr
@@ -486,6 +637,7 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
           filteredTasks.map((task) => {
             const pBadge = getPriorityBadge(task.priority);
             const isDone = task.completed;
+            const report = isDone ? getTaskTimeTakenReport(task, isAr) : null;
 
             return (
               <div
@@ -552,11 +704,59 @@ export const DailyTaskReminder: React.FC<DailyTaskReminderProps> = ({
                       </p>
                     )}
 
-                    {/* Completion timestamp with date and time if done */}
-                    {isDone && task.completedAt && (
-                      <div className="text-[11px] text-[#5E7153] font-medium flex items-center gap-1.5 bg-[#E9EDD9]/60 px-2.5 py-1 rounded-lg w-fit">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-[#5E7153]" />
-                        <span>{isAr ? `تاريخ ووقت الإنجاز: ${task.completedAt}` : `Completed at: ${task.completedAt}`}</span>
+                    {/* Performance & Duration Audit for WFH / Remote Work */}
+                    {isDone && report && (
+                      <div className="mt-3 p-3.5 sm:p-4 bg-gradient-to-br from-[#FAF9F6] to-[#E9EDD9]/10 border border-[#E5E2D9] rounded-2xl space-y-3 shadow-3xs max-w-2xl">
+                        {/* Status bar */}
+                        <div className="flex items-center justify-between border-b border-[#EFECE4] pb-2 text-[10px] sm:text-xs">
+                          <span className="font-bold text-[#5E7153] flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#5E7153] animate-pulse" />
+                            <span>{isAr ? 'مؤشرات كفاءة العمل عن بعد 🏠' : 'WFH Productivity Audit 🏠'}</span>
+                          </span>
+                          {report.isEarly ? (
+                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 font-extrabold flex items-center gap-1 text-[10px] sm:text-xs">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{isAr ? `أنجزت قبل الموعد المحدد بـ ${report.marginStr}` : `Completed ${report.marginStr} before deadline`}</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/60 font-extrabold flex items-center gap-1 text-[10px] sm:text-xs">
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                              <span>{isAr ? `متأخرة بـ ${report.marginStr}` : `Late by ${report.marginStr}`}</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Audit Details */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[10px] sm:text-xs">
+                          {/* Assignment / Creation */}
+                          <div className="p-2.5 rounded-xl bg-white border border-[#E5E2D9]/60">
+                            <span className="text-[#65635E] block font-semibold mb-0.5">{isAr ? 'تاريخ ووقت التكليف (البدء):' : 'Assigned Date & Time:'}</span>
+                            <span className="font-bold text-[#2D3628] font-mono">{report.createdStr}</span>
+                          </div>
+
+                          {/* Manager-scheduled Target */}
+                          <div className="p-2.5 rounded-xl bg-white border border-[#E5E2D9]/60">
+                            <span className="text-[#65635E] block font-semibold mb-0.5">{isAr ? 'المستهدف من المدير المباشر:' : 'Manager Scheduled Target:'}</span>
+                            <span className="font-bold text-amber-800 font-mono">{report.targetStr}</span>
+                          </div>
+
+                          {/* Actual completion */}
+                          <div className="p-2.5 rounded-xl bg-white border border-[#E5E2D9]/60">
+                            <span className="text-[#65635E] block font-semibold mb-0.5">{isAr ? 'تاريخ ووقت الإنجاز الفعلي:' : 'Actual Completion Time:'}</span>
+                            <span className="font-bold text-[#5E7153] font-mono">{report.completedStr}</span>
+                          </div>
+                        </div>
+
+                        {/* Actual Duration taken */}
+                        <div className="flex items-center gap-2.5 bg-[#E9EDD9]/50 p-2.5 rounded-xl border border-[#D9E0D2]/60 text-xs text-[#2D3628]">
+                          <Timer className="w-4 h-4 text-[#5E7153] shrink-0" />
+                          <span className="font-semibold">
+                            {isAr ? 'الزمن المستغرق الفعلي لإنهاء المهمة:' : 'Actual elapsed duration to complete task:'}
+                          </span>
+                          <span className="font-black text-[#5E7153] text-[13px] font-mono bg-white px-2.5 py-0.5 rounded-lg border border-[#E5E2D9]/60 shadow-3xs">
+                            {report.timeTakenStr}
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
