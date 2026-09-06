@@ -54,6 +54,7 @@ import {
   INITIAL_SALARY_ADVANCES,
 } from './mockData';
 import { Header } from './components/Header';
+import { LoginScreen } from './components/LoginScreen';
 import { OverviewCards } from './components/OverviewCards';
 import { DailyTaskReminder } from './components/DailyTaskReminder';
 import { RequestsList } from './components/RequestsList';
@@ -153,6 +154,10 @@ export default function App() {
 
   const [currentUserId, setCurrentUserId] = useState<string>(() => {
     return localStorage.getItem('dawamy_current_user') || 'emp-1';
+  });
+
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('dawamy_is_logged_in') === 'true';
   });
 
   const [requests, setRequests] = useState<LeaveOrWfhRequest[]>(() => {
@@ -354,6 +359,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('dawamy_current_user', currentUserId);
   }, [currentUserId]);
+
+  useEffect(() => {
+    localStorage.setItem('dawamy_is_logged_in', String(isLoggedIn));
+  }, [isLoggedIn]);
 
   useEffect(() => {
     localStorage.setItem('dawamy_requests', JSON.stringify(requests));
@@ -1600,6 +1609,25 @@ export default function App() {
 
   const pendingCount = requests.filter((r) => r.status.startsWith('pending')).length;
 
+  if (!isLoggedIn) {
+    return (
+      <LoginScreen
+        allUsers={users}
+        onLoginSuccess={(userId) => {
+          setCurrentUserId(userId);
+          setIsLoggedIn(true);
+          showToast(isAr ? 'تم تسجيل الدخول بنجاح! مرحباً بك.' : 'Welcome! Logged in successfully.', 'success');
+        }}
+        lang={lang}
+        onToggleLang={() => {
+          const newLang = lang === 'ar' ? 'en' : 'ar';
+          setLang(newLang);
+          localStorage.setItem('dawamy_lang', newLang);
+        }}
+      />
+    );
+  }
+
   return (
     <div className={`min-h-screen bg-[#FAF9F6] text-[#43423E] flex flex-col ${isAr ? 'rtl' : 'ltr'}`} dir={isAr ? 'rtl' : 'ltr'}>
       
@@ -1660,6 +1688,10 @@ export default function App() {
             }}
             onOpenSignatureModal={() => setIsSignatureModalOpen(true)}
             onOpenScheduleModal={() => setIsCompanyScheduleModalOpen(true)}
+            onLogout={() => {
+              setIsLoggedIn(false);
+              showToast(isAr ? 'تم تسجيل خروجك بنجاح' : 'You have been signed out successfully', 'info');
+            }}
             lang={lang}
             onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
             firebaseAuthUser={firebaseAuthUser}

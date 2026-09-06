@@ -14,6 +14,7 @@ import {
   AlertCircle,
   ExternalLink,
   PenTool,
+  LogOut,
 } from 'lucide-react';
 import { UserProfile, UserRole, NotificationItem } from '../types';
 
@@ -22,6 +23,7 @@ interface HeaderProps {
   allUsers: UserProfile[];
   onSelectUser: (user: UserProfile) => void;
   onToggleCurrentUserRole?: () => void;
+  onLogout?: () => void;
   notifications: NotificationItem[];
   onMarkNotificationAsRead: (id: string) => void;
   onMarkAllNotificationsAsRead?: () => void;
@@ -93,6 +95,7 @@ export const Header: React.FC<HeaderProps> = ({
   allUsers,
   onSelectUser,
   onToggleCurrentUserRole,
+  onLogout,
   notifications,
   onMarkNotificationAsRead,
   onMarkAllNotificationsAsRead,
@@ -535,6 +538,20 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Logout / Sign Out Button */}
+            {onLogout && (
+              <button
+                type="button"
+                id="btn-header-logout"
+                onClick={onLogout}
+                title={isAr ? 'تسجيل الخروج' : 'Sign Out'}
+                className="p-2 sm:px-3 sm:py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/50 hover:border-rose-300 transition shadow-xs flex items-center gap-1.5 cursor-pointer text-xs font-bold"
+              >
+                <LogOut className="w-4 h-4 shrink-0" />
+                <span className="hidden md:inline">{isAr ? 'خروج' : 'Exit'}</span>
+              </button>
+            )}
 
           </div>
 
