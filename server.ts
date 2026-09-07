@@ -1,15 +1,45 @@
 import express from 'express';
 import path from 'path';
+import helmet from 'helmet';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
+import { checkDatabaseConnection, prisma, assertProductionDatabaseConfigured } from './server/db';
+import { authenticateUser } from './server/middleware/auth';
+import authRoutes from './server/routes/authRoutes';
+import employeeRoutes from './server/routes/employeeRoutes';
+import attendanceRoutes from './server/routes/attendanceRoutes';
+import remoteWorkRoutes from './server/routes/remoteWorkRoutes';
+import leaveRoutes from './server/routes/leaveRoutes';
+import dashboardRoutes from './server/routes/dashboardRoutes';
 
 dotenv.config();
+
+// Check production database configuration (log notice without crashing container before port binds)
+try {
+  assertProductionDatabaseConfigured();
+} catch (err: any) {
+  console.warn('[Production Database Notice]:', err.message);
+}
 
 const app = express();
 const PORT = 3000;
 
+// Security headers with Helmet (configured safely for SPA assets)
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
 app.use(express.json());
+app.use(cookieParser());
+app.use(authenticateUser);
+
+// Check PostgreSQL connection in background without blocking server boot
+checkDatabaseConnection().catch((e) => console.warn('Database initial probe:', e?.message || e));
 
 // Initialize Google GenAI client lazily if key exists
 let genAiClient: GoogleGenAI | null = null;
@@ -27,17 +57,72 @@ function getGenAI(): GoogleGenAI | null {
   return genAiClient;
 }
 
-// 1. Health Check
-app.get('/api/health', (req, res) => {
-  res.json({
+// 1. Health Check with Container & Database Architecture Diagnostic
+app.get('/api/health', async (req, res) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  const dbConnected = await checkDatabaseConnection();
+
+  if (!dbConnected) {
+    if (isProd) {
+      return res.status(200).json({
+        Application: 'OK',
+        Database: 'ERROR',
+        status: 'error',
+        mode: 'production',
+        connected: false,
+        error: 'PostgreSQL database is required in production and currently unreachable.',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    return res.status(200).json({
+      Application: 'OK',
+      Database: 'PREVIEW_FALLBACK_MODE',
+      status: 'ok',
+      mode: 'development_preview',
+      connected: false,
+      message: 'Operating with development/preview fallback store. PostgreSQL is not attached.',
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  return res.status(200).json({
+    Application: 'OK',
+    Database: 'OK',
     status: 'ok',
-    app: 'Dawamy - دوامي',
-    port: PORT,
-    host: '0.0.0.0',
+    mode: isProd ? 'production' : 'development',
+    connected: true,
+    architecture: 'Containerized Architecture (Separated App & PostgreSQL DB)',
+    databaseEngine: 'PostgreSQL 16 Alpine',
     timestamp: new Date().toISOString(),
     geminiConfigured: !!process.env.GEMINI_API_KEY,
   });
 });
+
+// Production Fail-Closed API Middleware:
+// In production mode, reject operational API requests if PostgreSQL is not connected.
+app.use('/api', async (req, res, next) => {
+  if (req.path === '/health') return next();
+  if (process.env.NODE_ENV === 'production') {
+    const isConnected = await checkDatabaseConnection();
+    if (!isConnected) {
+      return res.status(503).json({
+        success: false,
+        error: 'Service Unavailable: PostgreSQL database is offline or not ready in production. Operations are blocked to prevent data loss (FAIL CLOSED policy).',
+        code: 'DATABASE_UNAVAILABLE_PRODUCTION',
+      });
+    }
+  }
+  next();
+});
+
+// REST API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/employees', employeeRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/remote-work', remoteWorkRoutes);
+app.use('/api/leaves', leaveRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // 2. AI Reason Drafter for Remote Work / Leave Request
 app.post('/api/gemini/generate-reason', async (req, res) => {
@@ -359,6 +444,19 @@ app.post('/api/biometric/ping', (req, res) => {
   });
 });
 
+// Production-safe Error Handling Middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('[Server Error]:', err?.message || err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  const isProd = process.env.NODE_ENV === 'production';
+  res.status(err.status || 500).json({
+    success: false,
+    error: isProd ? 'Internal server error. Please contact administrator.' : (err.message || 'Server error'),
+  });
+});
+
 // Start server with Vite middleware in dev mode, static files in prod
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -375,9 +473,27 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
+
+  // Graceful shutdown handling for container stops / restarts
+  const handleShutdown = async (signal: string) => {
+    console.log(`[${signal}] Initiating graceful shutdown...`);
+    server.close(async () => {
+      console.log('HTTP server closed.');
+      try {
+        await prisma.$disconnect();
+        console.log('Prisma database connections closed cleanly.');
+      } catch (err) {
+        console.error('Error disconnecting database:', err);
+      }
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleShutdown('SIGINT'));
 }
 
 startServer();

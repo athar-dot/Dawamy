@@ -1,0 +1,67 @@
+version: "3.8"
+
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dawamy_app
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://dawamy_user:dawamy_secure_password@postgres:5432/dawamy_db?schema=public
+      JWT_SECRET: ${JWT_SECRET:-dawamy_super_secure_jwt_secret_key_2026}
+      SESSION_SECRET: ${SESSION_SECRET:-dawamy_session_secret_key_2026}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    volumes:
+      - app_data:/app/data
+
+    networks:
+      - dawamy_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: dawamy_db
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: dawamy_user
+      POSTGRES_PASSWORD: dawamy_secure_password
+      POSTGRES_DB: dawamy_db
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    # PostgreSQL is NOT exposed to the public Internet!
+    # Strictly accessible within dawamy_network by the app container.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dawamy_user -d dawamy_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+    networks:
+      - dawamy_network
+
+networks:
+  dawamy_network:
+    driver: bridge
+    name: dawamy_network
+
+volumes:
+  postgres_data:
+    driver: local
+  app_data:
+    driver: local

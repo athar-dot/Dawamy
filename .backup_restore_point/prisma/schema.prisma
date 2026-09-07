@@ -1,0 +1,185 @@
+// Prisma Schema for Dawamy - PostgreSQL Containerized Architecture
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  employee
+  manager
+  hr
+  admin
+}
+
+enum RequestStatus {
+  pending_manager
+  pending_hr
+  approved
+  rejected
+}
+
+enum AttendanceStatus {
+  present
+  wfh_active
+  on_leave
+  late
+  absent
+}
+
+model User {
+  id           String      @id @default(uuid())
+  employeeId   String      @unique @map("employee_id")
+  name         String
+  nameEn       String?     @map("name_en")
+  email        String      @unique
+  passwordHash String      @map("password_hash")
+  role         UserRole    @default(employee)
+  department   String
+  isActive     Boolean     @default(true) @map("is_active")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  employee     Employee?
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Department {
+  id          String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  nameAr      String     @map("name_ar")
+  description String?
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  employees   Employee[]
+
+  @@map("departments")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  nameAr      String   @map("name_ar")
+  description String?
+  permissions String[]
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("roles")
+}
+
+model Employee {
+  id                 String       @id @default(uuid())
+  userId             String       @unique @map("user_id")
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobTitle           String       @map("job_title")
+  jobTitleEn         String?      @map("job_title_en")
+  departmentId       String?      @map("department_id")
+  departmentRef      Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  phone              String?
+  avatar             String?
+  joinDate           String?      @map("join_date")
+  annualLeaveBalance Int          @default(25) @map("annual_leave_balance")
+  wfhBalancePerWeek  Int          @default(2) @map("wfh_balance_per_week")
+  todayStatus        AttendanceStatus @default(present) @map("today_status")
+  lastCheckIn        String?      @map("last_check_in")
+  lastCheckOut       String?      @map("last_check_out")
+  location           String?
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  attendanceRecords  Attendance[]
+  leaveRequests      LeaveRequest[]
+  remoteRequests     RemoteWorkRequest[]
+  managedEmployees   EmployeeManager[] @relation("ManagerRelation")
+  reportingManagers  EmployeeManager[] @relation("EmployeeRelation")
+
+  @@map("employees")
+}
+
+model EmployeeManager {
+  id         String   @id @default(uuid())
+  employeeId String   @map("employee_id")
+  managerId  String   @map("manager_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  employee   Employee @relation("EmployeeRelation", fields: [employeeId], references: [id], onDelete: Cascade)
+  manager    Employee @relation("ManagerRelation", fields: [managerId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, managerId])
+  @@map("employee_manager")
+}
+
+model Attendance {
+  id                 String           @id @default(uuid())
+  employeeId         String           @map("employee_id")
+  employee           Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date               String           // YYYY-MM-DD
+  checkIn            String?          @map("check_in")
+  checkOut           String?          @map("check_out")
+  status             AttendanceStatus @default(present)
+  notes              String?
+  verificationMethod String?          @default("web") @map("verification_method")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  @@unique([employeeId, date])
+  @@map("attendance")
+}
+
+model LeaveRequest {
+  id              String        @id @default(uuid())
+  employeeId      String        @map("employee_id")
+  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType       String        @map("leave_type") // annual_leave, sick_leave, emergency_leave
+  startDate       String        @map("start_date") // YYYY-MM-DD
+  endDate         String        @map("end_date")   // YYYY-MM-DD
+  reason          String
+  status          RequestStatus @default(pending_manager)
+  approvedBy      String?       @map("approved_by")
+  approvedAt      DateTime?     @map("approved_at")
+  rejectionReason String?       @map("rejection_reason")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@map("leave_requests")
+}
+
+model RemoteWorkRequest {
+  id              String        @id @default(uuid())
+  employeeId      String        @map("employee_id")
+  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date            String        // YYYY-MM-DD
+  reason          String
+  tasksPlan       String?       @map("tasks_plan")
+  status          RequestStatus @default(pending_manager)
+  managerId       String?       @map("manager_id")
+  approvedAt      DateTime?     @map("approved_at")
+  rejectionReason String?       @map("rejection_reason")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@map("remote_work_requests")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String   // LOGIN, LOGOUT, CREATE_REQUEST, APPROVE_WFH, REJECT_WFH, CHECK_IN, etc.
+  entityType String   @map("entity_type") // user, attendance, leave_request, remote_work_request
+  entityId   String?  @map("entity_id")
+  details    String?  // JSON string or summary
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
